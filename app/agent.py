@@ -2,6 +2,8 @@ from agents import Agent
 
 from app.context import AppContext
 from app.tools.customer import get_customer
+from app.tools.calculator import calculate_percentage
+
 
 
 banking_agent = Agent[AppContext](
@@ -20,6 +22,7 @@ banking_agent = Agent[AppContext](
     """,
 
     tools=[
-        get_customer
+        get_customer,
+        calculate_percentage
     ]
 )

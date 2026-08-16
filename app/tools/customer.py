@@ -12,11 +12,12 @@ def lookup_customer(
     customer_id: str
 ) -> str:
     """
-    Core customer lookup logic.
-
-    Intentionally vulnerable baseline:
-    authorization is not enforced yet.
+    Retrieve customer information after enforcing
+    object-level authorization.
     """
+
+    if customer_id not in context.authorized_customer_ids:
+        return "ACCESS DENIED"
 
     customers = load_customers()
 
