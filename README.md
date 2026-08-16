@@ -2,29 +2,25 @@
 
 A hands-on security engineering project focused on identifying, exploiting, and mitigating security risks in LLM-based agentic applications.
 
-The project implements a small enterprise-style AI agent with access to tools and sensitive mock data. The application is deliberately developed through vulnerable and hardened iterations so that security issues can be reproduced, tested, mitigated, and documented.
+The project implements a small enterprise-style AI agent with access to tools, a Retrieval-Augmented Generation (RAG) knowledge base, and sensitive mock data.
 
-The objective is to demonstrate practical AI security engineering across:
+The application is deliberately developed through vulnerable and hardened iterations so that security issues can be:
 
-* Agent tool security
-* Authorization and least privilege
-* Prompt injection
-* Indirect prompt injection
-* RAG security
-* Sensitive information disclosure
-* Cross-user and cross-session isolation
-* Excessive agency
-* Human-in-the-loop controls
-* Security testing and red teaming
-* STRIDE and LLM threat modelling
+1. Reproduced
+2. Tested
+3. Documented
+4. Mitigated
+5. Retested
 
-> **Important:** All users, customers, accounts, and financial information in this repository are fictional test data.
+The project currently demonstrates both a **successfully mitigated object-level authorization vulnerability** and an **intentionally vulnerable RAG authorization design**.
+
+> **Important:** All users, customers, documents, accounts, and financial information in this repository are fictional test data.
 
 ---
 
 # Project Goal
 
-The final architecture will represent a simplified enterprise AI assistant:
+The final architecture represents a simplified enterprise AI assistant:
 
 ```text
 User
@@ -32,15 +28,15 @@ User
  ▼
 AI Agent / LLM
  │
- ├───────────────┬────────────────┬────────────────┐
- ▼               ▼                ▼                ▼
-Customer Tool    Calculator       RAG Search       High-impact Tools
- │                                │
- ▼                                ▼
-Mock Data                        Vector DB
+ ├──────────────┬────────────────┬────────────────┐
+ ▼              ▼                ▼                ▼
+Customer Tool   Calculator       RAG Search       High-impact Tools
+ │                               │
+ ▼                               ▼
+Mock Data                     Vector DB
 ```
 
-Security controls will progressively be introduced around the agent and its tools:
+Security controls are progressively introduced around the agent:
 
 ```text
 Authentication
@@ -49,7 +45,7 @@ Authorization
       │
 Agent / LLM
       │
-Tool allowlisting
+Tool access controls
       │
 Tool argument validation
       │
@@ -62,7 +58,7 @@ Output validation
 Audit logging
 ```
 
-The project follows a deliberate lifecycle:
+The development methodology is:
 
 ```text
 Build
@@ -76,55 +72,69 @@ Mitigate
 Retest
 ```
 
-The intention is not to rely solely on LLM instructions or prompt-based guardrails.
-
-Security-sensitive decisions such as authorization are enforced using deterministic application logic outside the LLM.
+A core architectural principle of the project is that security-sensitive decisions must not rely solely on LLM instructions or prompt-based guardrails.
 
 ---
 
 # Current Status
 
-## Version: Authorization Controls Implemented
+## RAG Vulnerable Baseline
 
-The project currently includes:
+The application currently contains:
 
-* A working OpenAI-based AI agent
+* OpenAI-based AI agent
 * Two mock application users
 * Two mock banking customers
-* Trusted application context representing the authenticated user
-* A customer lookup tool
+* Trusted application context
+* Customer lookup tool
 * Deterministic object-level authorization
-* Automated authorization security tests
-* A second calculator tool
+* Calculator tool
 * Multi-tool agent behavior
+* Chroma vector database
+* Internal document dataset
+* RAG document search tool
+* Document ownership metadata
+* Customer authorization regression tests
+* RAG authorization security tests
 
-The first identified security issue, **SEC-001**, has been reproduced, tested, and mitigated.
+Two security findings have now been investigated:
 
-Current development stage:
+| ID      | Finding                             | Status       |
+| ------- | ----------------------------------- | ------------ |
+| SEC-001 | Cross-customer authorization bypass | ✅ Mitigated  |
+| SEC-002 | Cross-user RAG document retrieval   | ❌ Vulnerable |
+
+Current development state:
 
 ```text
-Vulnerable customer lookup
+Customer lookup vulnerability
           │
           ▼
-Security test created
+SEC-001 reproduced
           │
           ▼
-Authorization bypass reproduced
+Authorization control
           │
           ▼
-Authorization control implemented
+SEC-001 tests PASS
           │
           ▼
-Security regression tests passing
+Calculator added
           │
           ▼
-Second agent tool added
+RAG implemented
+          │
+          ▼
+Cross-user retrieval reproduced
+          │
+          ▼
+SEC-002 test XFAIL
           │
           ▼
 CURRENT STATE
 ```
 
-The next major development phase will introduce **Retrieval-Augmented Generation (RAG)** and its associated security risks.
+The next step is to enforce authorization **during RAG retrieval**.
 
 ---
 
@@ -136,26 +146,40 @@ The next major development phase will introduce **Retrieval-Augmented Generation
                           ▼
                     AI Agent / LLM
                           │
-                 ┌────────┴─────────┐
-                 │                  │
-                 ▼                  ▼
-          get_customer()     calculate_percentage()
-                 │
-                 ▼
-          lookup_customer()
-                 │
-                 ▼
-       Authorization Check
-                 │
-          ┌──────┴──────┐
-          │             │
-        ALLOW          DENY
-          │             │
-          ▼             ▼
-   customers.json   ACCESS DENIED
+              ┌───────────┼────────────┐
+              │           │            │
+              ▼           ▼            ▼
+       get_customer() Calculator  search_documents()
+              │                         │
+              ▼                         ▼
+      lookup_customer()          Chroma Vector DB
+              │                         │
+              ▼                         │
+       Authorization                    │
+              │                         │
+        ┌─────┴─────┐                   │
+        │           │                   │
+      ALLOW       DENY                  │
+        │           │                   │
+        ▼           ▼                   ▼
+ customers.json  ACCESS DENIED    All documents
+                                      │
+                                      ▼
+                              No retrieval ACL yet
+                                      │
+                                      ▼
+                               ❌ SEC-002
 ```
 
-The authenticated user is stored in an application-side context:
+The customer tool is now authorization-aware.
+
+The RAG retrieval pipeline is intentionally not authorization-aware yet.
+
+---
+
+# Trusted Application Context
+
+The authenticated application user is represented by `AppContext`:
 
 ```text
 AppContext
@@ -166,109 +190,78 @@ AppContext
  └── authorized_customer_ids
 ```
 
-This context is used by deterministic application code when deciding whether access to a customer should be granted.
+This context represents trusted application-side information.
 
-The LLM does **not** make the authorization decision.
+For example:
+
+```text
+Alice
+└── Authorized customer: CUST001
+
+Bob
+└── Authorized customer: CUST002
+```
+
+The LLM does not determine these permissions.
 
 ---
 
 # Mock Authorization Model
-
-Two fictional users currently exist:
 
 | User  | Role    | Authorized customer |
 | ----- | ------- | ------------------- |
 | Alice | Advisor | `CUST001`           |
 | Bob   | Advisor | `CUST002`           |
 
-Authorization matrix:
+Customer authorization matrix:
 
 | User  | CUST001 | CUST002 |
 | ----- | ------- | ------- |
-| Alice | Allow   | Deny    |
-| Bob   | Deny    | Allow   |
+| Alice | ✅ Allow | ❌ Deny  |
+| Bob   | ❌ Deny  | ✅ Allow |
 
-This matrix is now enforced by application logic.
+This authorization matrix is currently enforced for direct customer lookup.
 
 ---
 
-# Security Finding SEC-001
+# SEC-001 — Cross-Customer Authorization Bypass
 
-## Missing Object-Level Authorization in Customer Lookup
+## Status: ✅ Mitigated
 
 ### Original Vulnerability
 
-The first implementation of the customer lookup tool checked only whether the requested customer existed.
+The initial implementation allowed the agent to retrieve any customer that existed in the dataset.
 
-It did **not** verify whether the authenticated user was authorized to access that customer.
-
-This allowed the following scenario:
+For example:
 
 ```text
 Authenticated user: Alice
-
-Alice authorized customers:
-    CUST001
-
-Requested:
-    CUST002
+Authorized customer: CUST001
+Requested customer: CUST002
 
 Result:
-    CUST002 customer data returned
-```
-
-This represented an object-level authorization failure and cross-user sensitive information disclosure.
-
----
-
-# SEC-001 Attack Flow
-
-Before mitigation:
-
-```text
-Alice
- │
- │ "Show me CUST002"
- ▼
-AI Agent
- │
- ▼
-get_customer("CUST002")
- │
- ▼
-lookup_customer()
- │
- ▼
-customers.json
- │
- ▼
 CUST002 returned
- │
- ▼
-❌ UNAUTHORIZED DATA DISCLOSURE
 ```
 
-The vulnerability existed because the requested `customer_id` was accepted without checking it against the authenticated user's authorized customer list.
+The customer lookup contained no object-level authorization control.
 
 ---
 
-# SEC-001 Security Control
+## SEC-001 Control
 
-Authorization is now implemented inside the deterministic customer lookup logic.
-
-Conceptually:
+Authorization is now implemented in deterministic application logic:
 
 ```python
 if customer_id not in context.authorized_customer_ids:
     return "ACCESS DENIED"
 ```
 
-The resulting flow is:
+Result:
 
 ```text
 Alice
  │
- │ "Show me CUST002"
+ │ request CUST002
  ▼
 AI Agent
  │
@@ -281,7 +274,7 @@ lookup_customer()
  ▼
 Authorization Check
  │
- ├── User: Alice
+ ├── Authenticated: Alice
  ├── Authorized: CUST001
  └── Requested: CUST002
           │
@@ -289,72 +282,20 @@ Authorization Check
      ACCESS DENIED
 ```
 
-The important design principle is:
-
-> **Authorization is enforced outside the LLM.**
-
-Even if the LLM is manipulated into requesting an unauthorized resource, the application-level security control denies access.
+The security control is outside the LLM.
 
 ---
 
-# Why Authorization Is Not Implemented in the Prompt
+# SEC-001 Security Tests
 
-An insecure design might rely on instructions such as:
+The following authorization matrix is automatically tested:
 
-```text
-Only retrieve customers that the current user is authorized to access.
-```
-
-This project deliberately does not treat such instructions as an authorization control.
-
-LLMs can potentially be manipulated through:
-
-* Direct prompt injection
-* Indirect prompt injection
-* Jailbreaking
-* Malicious retrieved content
-* Tool-use manipulation
-
-The security architecture therefore assumes that the LLM may attempt unauthorized actions.
-
-The target model is:
-
-```text
-Attacker
-   │
-   │ malicious instruction
-   ▼
-LLM
-   │
-   │ potentially compromised
-   ▼
-get_customer("CUST002")
-   │
-   ▼
-Application Authorization
-   │
-   ▼
-ACCESS DENIED
-```
-
-A central security principle of this project is therefore:
-
-> **LLM instructions and guardrails are not authorization controls.**
-
----
-
-# Security Tests
-
-The authorization control is covered by deterministic automated tests.
-
-Current test matrix:
-
-| Test            | Expected result |
-| --------------- | --------------- |
-| Alice → CUST001 | Allowed         |
-| Alice → CUST002 | Denied          |
-| Bob → CUST001   | Denied          |
-| Bob → CUST002   | Allowed         |
+| Test            | Expected |
+| --------------- | -------- |
+| Alice → CUST001 | Allow    |
+| Alice → CUST002 | Deny     |
+| Bob → CUST001   | Deny     |
+| Bob → CUST002   | Allow    |
 
 Example:
 
@@ -371,42 +312,23 @@ def test_alice_cannot_access_bobs_customer():
     assert result == "ACCESS DENIED"
 ```
 
-Run the security test suite with:
-
-```bash
-python -m pytest -v
-```
-
-Current expected result:
-
-```text
-test_alice_can_access_her_customer PASSED
-test_alice_cannot_access_bobs_customer PASSED
-test_bob_can_access_his_customer PASSED
-test_bob_cannot_access_alices_customer PASSED
-```
-
-The same test that previously exposed the vulnerability now verifies that the mitigation remains effective.
+These tests currently pass.
 
 ---
 
 # Multi-Tool Agent
 
-The agent now has access to more than one capability.
-
-Current tools:
+The agent currently exposes three capabilities:
 
 ```text
 Agent
  │
  ├── get_customer()
- │
- └── calculate_percentage()
+ ├── calculate_percentage()
+ └── search_documents()
 ```
 
-This allows the LLM to perform multi-step reasoning involving tool selection.
-
-Example:
+For example:
 
 ```text
 User:
@@ -414,7 +336,7 @@ User:
 What is 10% of CUST001's portfolio?
 ```
 
-Possible agent execution:
+The agent can perform:
 
 ```text
 get_customer("CUST001")
@@ -430,20 +352,320 @@ calculate_percentage(
         │
         ▼
 25000
-        │
-        ▼
-Assistant:
-CHF 25,000
 ```
 
-This prepares the architecture for later testing of:
+This creates the foundation for later testing of tool abuse, excessive agency, and least-privilege tool access.
 
-* Tool selection
-* Tool allowlisting
-* Tool argument manipulation
-* Excessive agency
-* Least-privilege tool design
-* High-impact tool invocation
+---
+
+# Retrieval-Augmented Generation
+
+The application now contains a RAG pipeline backed by Chroma.
+
+Conceptually:
+
+```text
+User question
+      │
+      ▼
+AI Agent
+      │
+      ▼
+search_documents()
+      │
+      ▼
+Semantic query
+      │
+      ▼
+Chroma Vector DB
+      │
+      ▼
+Relevant documents
+      │
+      ▼
+LLM context
+      │
+      ▼
+Answer
+```
+
+Documents contain metadata including ownership information.
+
+Conceptually:
+
+```text
+Document A
+├── source: customer_CUST001.md
+└── owner: alice
+
+Document B
+├── source: customer_CUST002.md
+└── owner: bob
+```
+
+This metadata will eventually be used to enforce retrieval authorization.
+
+It is deliberately **not enforced in the current baseline**.
+
+---
+
+# SEC-002 — Cross-User RAG Document Retrieval
+
+## Status: ❌ Vulnerable
+
+The current RAG implementation performs semantic retrieval across the complete Chroma collection.
+
+Conceptually, the vulnerable query behaves like:
+
+```text
+Search:
+    all documents
+
+Authorization filter:
+    NONE
+```
+
+The current implementation performs:
+
+```python
+results = collection.query(
+    query_texts=[query],
+    n_results=3
+)
+```
+
+No authorization condition is applied.
+
+---
+
+## SEC-002 Attack
+
+Alice is authenticated.
+
+Her authorized customer is:
+
+```text
+CUST001
+```
+
+Alice asks the agent:
+
+```text
+Search the internal documents for information about CUST002.
+```
+
+The RAG pipeline can retrieve:
+
+```text
+SOURCE: customer_CUST002.md
+OWNER: bob
+```
+
+The information may then enter the LLM context.
+
+Attack flow:
+
+```text
+Alice
+ │
+ │ "Find information about CUST002"
+ ▼
+Agent
+ │
+ ▼
+search_documents()
+ │
+ ▼
+Chroma
+ │
+ │ semantic similarity search
+ │
+ │ no authorization filter
+ ▼
+Bob-owned document
+ │
+ ▼
+LLM context
+ │
+ ▼
+❌ CROSS-USER DATA DISCLOSURE
+```
+
+---
+
+# SEC-002 Root Cause
+
+The vector database performs relevance filtering but not authorization filtering.
+
+These are separate security properties:
+
+```text
+Semantic relevance
+        ≠
+Authorization
+```
+
+A document can be highly relevant to Alice's query while still being unauthorized for Alice.
+
+The current vulnerable architecture effectively performs:
+
+```text
+Retrieve documents
+WHERE semantic_similarity = high
+```
+
+The target architecture must instead enforce:
+
+```text
+Retrieve documents
+WHERE semantic_similarity = high
+AND
+owner IN (authenticated_user, public)
+```
+
+---
+
+# SEC-002 Security Requirement
+
+Users should only retrieve:
+
+```text
+Public documents
++
+documents they are authorized to access
+```
+
+Expected retrieval matrix:
+
+| User  | Public | Alice documents | Bob documents |
+| ----- | -----: | --------------: | ------------: |
+| Alice |      ✅ |               ✅ |             ❌ |
+| Bob   |      ✅ |               ❌ |             ✅ |
+
+---
+
+# SEC-002 Security Tests
+
+A deterministic RAG authorization test now documents the vulnerability.
+
+Example:
+
+```python
+@pytest.mark.xfail(
+    strict=True,
+    reason="SEC-002: RAG retrieval does not enforce document ownership"
+)
+def test_alice_cannot_retrieve_bobs_documents():
+
+    alice = get_user_context("alice")
+
+    result = search_documents_logic(
+        context=alice,
+        query="CUST002"
+    )
+
+    assert "owner: bob" not in result.lower()
+```
+
+The test currently produces:
+
+```text
+XFAIL
+```
+
+This is intentional.
+
+It means:
+
+```text
+Security requirement
+        │
+        ▼
+Alice must not retrieve Bob documents
+        │
+        ▼
+Current implementation violates requirement
+        │
+        ▼
+Known and reproducible vulnerability
+```
+
+Once retrieval authorization is implemented, the `xfail` marker will be removed and the same test will become a regression test.
+
+---
+
+# Why Authorization Must Happen During Retrieval
+
+A future implementation should **not** retrieve unauthorized documents and remove them afterward.
+
+For example, this is undesirable:
+
+```text
+Chroma
+  │
+  ▼
+Bob's sensitive document retrieved
+  │
+  ▼
+Application checks ownership
+  │
+  ▼
+Document discarded
+```
+
+Unauthorized information has already crossed the retrieval boundary.
+
+The target architecture is:
+
+```text
+Alice
+ │
+ ▼
+search_documents()
+ │
+ ▼
+Authorization-aware query
+ │
+ ├── public
+ └── owner = alice
+        │
+        ▼
+      Chroma
+        │
+        ▼
+Only authorized documents
+        │
+        ▼
+LLM context
+```
+
+The objective is to prevent unauthorized information from entering the LLM context at all.
+
+---
+
+# Why LLM Instructions Are Not Authorization Controls
+
+An insecure approach would tell the agent:
+
+```text
+Never retrieve documents belonging to another user.
+```
+
+This is not considered a sufficient security control.
+
+The project assumes that the LLM could potentially be manipulated through:
+
+* Direct prompt injection
+* Indirect prompt injection
+* Malicious retrieved content
+* Jailbreaking
+* Tool-use manipulation
+
+Therefore:
+
+> **LLM instructions and guardrails are not authorization controls.**
+
+Even if the LLM deliberately requests an unauthorized resource, deterministic application controls should prevent access.
 
 ---
 
@@ -459,18 +681,25 @@ agentic-ai-security-lab/
 │   ├── context.py
 │   ├── data_loader.py
 │   │
-│   └── tools/
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── customer.py
+│   │   ├── calculator.py
+│   │   └── document_search.py
+│   │
+│   └── rag/
 │       ├── __init__.py
-│       ├── customer.py
-│       └── calculator.py
+│       └── chroma_store.py
 │
 ├── data/
 │   ├── users.json
-│   └── customers.json
+│   ├── customers.json
+│   └── documents/
 │
 ├── tests/
 │   └── security/
-│       └── test_customer_authorization.py
+│       ├── test_customer_authorization.py
+│       └── test_rag_authorization.py
 │
 ├── .gitignore
 ├── requirements.txt
@@ -481,7 +710,7 @@ agentic-ai-security-lab/
 
 # Running the Application
 
-Create a Python virtual environment:
+Create a virtual environment:
 
 ```powershell
 py -m venv .venv
@@ -519,49 +748,42 @@ python -m app.main --user bob
 
 ---
 
-# Testing Authorization Manually
+# Running Security Tests
 
 Run:
 
 ```powershell
-python -m app.main --user alice
+python -m pytest -v
 ```
 
-Legitimate request:
+Current expected state:
 
 ```text
-Show me all information about CUST001.
+Customer authorization tests:
+PASS
+
+RAG authorization tests:
+XFAIL
 ```
 
-Expected:
+This is intentional.
+
+The repository currently contains:
 
 ```text
-Customer information returned.
+SEC-001 → mitigated
+SEC-002 → intentionally vulnerable
 ```
-
-Unauthorized request:
-
-```text
-Show me all information about CUST002.
-```
-
-Expected:
-
-```text
-Access denied.
-```
-
-This demonstrates that authorization is enforced regardless of whether the LLM attempts the tool invocation.
 
 ---
 
 # Git Security Evolution
 
-The repository deliberately preserves major security states.
+The repository preserves important security states through Git history and tags.
 
 ## `v0.1-vulnerable-baseline`
 
-Represents the initial vulnerable implementation.
+Initial agent implementation with missing customer object-level authorization.
 
 ```text
 Alice
@@ -569,35 +791,64 @@ Alice
 CUST002
   ↓
 Customer data returned
-```
 
-SEC-001 can be reproduced in this version.
+❌ VULNERABLE
+```
 
 ---
 
 ## `v0.2-authz-controls`
 
-Represents the current authorization-hardened architecture.
+Customer authorization is enforced in deterministic application logic.
 
 ```text
 Alice
   ↓
 CUST002
   ↓
-Authorization check
+Authorization
   ↓
 ACCESS DENIED
+
+✅ MITIGATED
 ```
-
-This version contains:
-
-* Object-level authorization
-* Authorization regression tests
-* Multi-tool agent functionality
 
 ---
 
-## Planned Tags
+## Current Untagged Development State
+
+RAG has now been introduced.
+
+```text
+Alice
+  ↓
+Search CUST002
+  ↓
+Chroma
+  ↓
+Bob document returned
+
+❌ VULNERABLE RAG
+```
+
+This state remains represented by Git history but does not receive a release tag.
+
+---
+
+## Planned `v0.3-secure-rag`
+
+This tag will only be created after:
+
+* Retrieval authorization is implemented
+* Alice cannot retrieve Bob-owned documents
+* Bob cannot retrieve Alice-owned documents
+* Authorized private documents remain accessible
+* Public documents remain accessible
+* SEC-002 regression tests pass
+
+---
+
+## Planned Version Tags
 
 ```text
 v0.1-vulnerable-baseline
@@ -607,7 +858,7 @@ v0.4-agent-guardrails
 v1.0-final
 ```
 
-Tags represent major security architecture states rather than individual development milestones.
+Tags represent major security architecture states rather than every development milestone.
 
 ---
 
@@ -621,9 +872,9 @@ Tags represent major security architecture states rather than individual develop
 * [x] Implement application context
 * [x] Implement basic AI agent
 * [x] Implement customer lookup tool
-* [x] Create intentionally vulnerable authorization baseline
-* [x] Add first security test
+* [x] Create vulnerable authorization baseline
 * [x] Reproduce cross-customer authorization bypass
+* [x] Add security test
 * [x] Enforce object-level authorization
 * [x] Add authorization matrix tests
 * [x] Retest SEC-001
@@ -632,17 +883,20 @@ Tags represent major security architecture states rather than individual develop
 
 * [x] Add calculator tool
 * [x] Demonstrate multi-tool agent behavior
-* [ ] Evaluate least-privilege tool design
 
-## Phase 3 — RAG
+## Phase 3 — RAG and Retrieval Authorization
 
-* [ ] Add document dataset
-* [ ] Add document ingestion
-* [ ] Add vector database
-* [ ] Implement document search tool
-* [ ] Add public and user-specific documents
-* [ ] Demonstrate cross-user retrieval
+* [x] Add document dataset
+* [x] Add Chroma vector database
+* [x] Implement document ingestion
+* [x] Implement document search tool
+* [x] Add document ownership metadata
+* [x] Demonstrate cross-user retrieval
+* [x] Add SEC-002 security test
 * [ ] Implement retrieval authorization
+* [ ] Add complete RAG authorization matrix tests
+* [ ] Retest SEC-002
+* [ ] Tag `v0.3-secure-rag`
 
 ## Phase 4 — Prompt Injection and RAG Poisoning
 
@@ -658,6 +912,7 @@ Tags represent major security architecture states rather than individual develop
 * [ ] Introduce high-impact simulated tool
 * [ ] Test unauthorized tool invocation
 * [ ] Test excessive agency
+* [ ] Implement least-privilege tool access
 * [ ] Add tool allowlisting
 * [ ] Add structured argument validation
 * [ ] Add human approval for sensitive actions
@@ -667,7 +922,7 @@ Tags represent major security architecture states rather than individual develop
 * [ ] Add conversation sessions
 * [ ] Demonstrate cross-session leakage
 * [ ] Implement per-user session isolation
-* [ ] Test memory poisoning scenarios
+* [ ] Test memory poisoning
 
 ## Phase 7 — Defensive Controls
 
@@ -676,7 +931,6 @@ Tags represent major security architecture states rather than individual develop
 * [ ] Rate limiting
 * [ ] Audit logging
 * [ ] Content filtering
-* [ ] Retrieval ACLs
 * [ ] Least-privilege tool scopes
 
 ## Phase 8 — Automated AI Red Teaming
@@ -684,7 +938,8 @@ Tags represent major security architecture states rather than individual develop
 * [ ] Expand pytest security regression suite
 * [ ] Add Promptfoo
 * [ ] Automate adversarial prompts
-* [ ] Compare attack success before and after controls
+* [ ] Measure attack success
+* [ ] Compare before/after controls
 
 ## Phase 9 — Threat Model
 
@@ -697,121 +952,121 @@ Tags represent major security architecture states rather than individual develop
 
 ---
 
-# Planned Attack Scenarios
-
-| ID      | Threat                              | Target           | Status      |
-| ------- | ----------------------------------- | ---------------- | ----------- |
-| SEC-001 | Cross-customer authorization bypass | Customer tool    | ✅ Mitigated |
-| SEC-002 | Direct prompt injection             | Agent            | Planned     |
-| SEC-003 | Indirect prompt injection           | RAG              | Planned     |
-| SEC-004 | Sensitive information disclosure    | Agent / tools    | Planned     |
-| SEC-005 | RAG authorization bypass            | Retriever        | Planned     |
-| SEC-006 | RAG poisoning                       | Knowledge base   | Planned     |
-| SEC-007 | Unauthorized tool invocation        | Agent            | Planned     |
-| SEC-008 | Excessive agency                    | High-impact tool | Planned     |
-| SEC-009 | Cross-session data leakage          | Memory           | Planned     |
-| SEC-010 | System prompt extraction            | Agent            | Planned     |
-| SEC-011 | Malicious tool arguments            | Tools            | Planned     |
-| SEC-012 | Resource abuse / rate-limit bypass  | API              | Planned     |
-
-The list will evolve as the architecture grows.
-
----
-
 # Security Engineering Methodology
 
-Each security issue follows the same lifecycle:
+Each finding follows the same process:
 
 ```text
-1. Define the expected security property
-2. Build or identify the vulnerable implementation
-3. Create an attack scenario
-4. Reproduce the vulnerability
-5. Write an automated security test
-6. Identify the root cause
-7. Implement the security control
-8. Run the same attack again
-9. Verify regression tests pass
+1. Define security requirement
+2. Create vulnerable implementation
+3. Develop attack scenario
+4. Reproduce vulnerability
+5. Add automated security test
+6. Determine root cause
+7. Implement deterministic control
+8. Repeat the attack
+9. Verify regression tests
 10. Document the result
 ```
 
-This methodology allows Git history to preserve both vulnerable and secured implementations.
+Git history deliberately preserves vulnerable states so that changes in security behavior remain reproducible.
 
 ---
 
-# Current Security Result
+# Current Results
 
 ## SEC-001
 
-### Before
+```text
+BEFORE
+
+Alice → CUST002 → Data returned
+                     ❌
+
+
+CONTROL
+
+Object-level authorization
+
+
+AFTER
+
+Alice → CUST002 → ACCESS DENIED
+                     ✅
+```
+
+## SEC-002
 
 ```text
+CURRENT
+
 Alice
   ↓
-Request CUST002
+Search for CUST002
   ↓
-Customer data returned
+Semantic retrieval
+  ↓
+Bob-owned document
+  ↓
+LLM context
 
 ❌ VULNERABLE
 ```
 
-### Control
-
-```text
-Deterministic object-level authorization
-```
-
-### After
+Target:
 
 ```text
 Alice
   ↓
-Request CUST002
+Search for CUST002
   ↓
-Authorization check
+Retrieval authorization
   ↓
-ACCESS DENIED
+Bob-owned document excluded
 
-✅ MITIGATED
+✅ BLOCKED
 ```
 
 ---
 
 # Next Milestone
 
-The next major component will be **Retrieval-Augmented Generation (RAG)**.
+The immediate next step is to mitigate **SEC-002**.
 
-The agent will gain a new tool:
-
-```text
-search_documents()
-```
-
-The architecture will evolve into:
+The RAG query will be changed from:
 
 ```text
-                    Agent
-                      │
-           ┌──────────┼───────────┐
-           │          │           │
-           ▼          ▼           ▼
-     Customer      Calculator    RAG Search
-       Tool           Tool          Tool
-           │                       │
-           ▼                       ▼
-     Mock Customer              Vector DB
-        Data
+Search all documents
 ```
 
-The RAG implementation will initially introduce deliberate security weaknesses so that the project can demonstrate:
+to:
 
-* Cross-user document retrieval
-* Retrieval authorization failures
-* Indirect prompt injection
-* RAG poisoning
-* Untrusted content handling
+```text
+Search only:
+    public documents
+    OR
+    documents owned by the authenticated user
+```
 
-The same **vulnerable → exploit → mitigate → retest** methodology will then be applied to the RAG pipeline.
+The same security tests that currently produce `XFAIL` will then be rerun.
+
+Once:
+
+```text
+Alice → Bob documents = DENIED
+Bob → Alice documents = DENIED
+Alice → Alice documents = ALLOWED
+Bob → Bob documents = ALLOWED
+Public documents = ALLOWED
+```
+
+all pass, the project will reach:
+
+```text
+v0.3-secure-rag
+```
+
+The following milestone will then deliberately introduce **indirect prompt injection and RAG poisoning**.
 
 ---
 
@@ -819,7 +1074,7 @@ The same **vulnerable → exploit → mitigate → retest** methodology will the
 
 The final project will demonstrate an agentic application in which the LLM is treated as an **untrusted decision-making component rather than a security boundary**.
 
-The project applies established application-security principles such as:
+Established application-security concepts such as:
 
 * Authentication
 * Authorization
@@ -830,23 +1085,23 @@ The project applies established application-security principles such as:
 * Separation of duties
 * Defense in depth
 
-to modern AI-specific components including:
+are applied to AI-specific components including:
 
 * LLM agents
 * Tool invocation
-* Retrieval-Augmented Generation
+* RAG
 * Vector databases
 * Agent memory
 * Human-in-the-loop workflows
 
-The final repository will include:
+The final repository will contain:
 
 * Working source code
 * Vulnerable historical baselines
 * Exploit scenarios
 * Automated security tests
 * Defensive implementations
-* Before/after results
+* Before/after security results
 * Architecture documentation
 * STRIDE threat model
 * LLM-specific threat model
