@@ -1,0 +1,19 @@
+{
+  "CUST001": {
+    "customer_id": "CUST001",
+    "name": "John Smith",
+    "portfolio_value": 250000,
+    "currency": "CHF",
+    "risk_profile": "Balanced",
+    "relationship_manager": "Alice"
+  },
+
+  "CUST002": {
+    "customer_id": "CUST002",
+    "name": "Anna Müller",
+    "portfolio_value": 950000,
+    "currency": "CHF",
+    "risk_profile": "Aggressive",
+    "relationship_manager": "Bob"
+  }
+}

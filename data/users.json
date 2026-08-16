@@ -1,0 +1,18 @@
+{
+  "alice": {
+    "user_id": "USR001",
+    "name": "Alice",
+    "role": "advisor",
+    "authorized_customer_ids": [
+      "CUST001"
+    ]
+  },
+  "bob": {
+    "user_id": "USR002",
+    "name": "Bob",
+    "role": "advisor",
+    "authorized_customer_ids": [
+      "CUST002"
+    ]
+  }
+}
