@@ -5,14 +5,24 @@
     "role": "advisor",
     "authorized_customer_ids": [
       "CUST001"
+    ],
+    "permissions": [
+      "customer:read",
+      "document:read",
+      "transfer:create"
     ]
   },
+
   "bob": {
     "user_id": "USR002",
     "name": "Bob",
     "role": "advisor",
     "authorized_customer_ids": [
       "CUST002"
+    ],
+    "permissions": [
+      "customer:read",
+      "document:read"
     ]
   }
 }

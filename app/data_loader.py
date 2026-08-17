@@ -25,10 +25,17 @@ def get_user_context(username: str) -> AppContext:
         raise ValueError(f"Unknown user: {username}")
 
     user = users[username]
+    
 
     return AppContext(
         username=username,
         user_id=user["user_id"],
         role=user["role"],
-        authorized_customer_ids=user["authorized_customer_ids"],
+        authorized_customer_ids=user[
+            "authorized_customer_ids"
+        ],
+        permissions=user.get(
+        "permissions",
+            []
+        )
     )

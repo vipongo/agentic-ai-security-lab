@@ -65,13 +65,32 @@ def create_transfer_logic(
     amount_chf: int
 ) -> str:
     """
-    Create a simulated transfer.
-
-    INTENTIONALLY VULNERABLE BASELINE:
-    - no object-level authorization
-    - no user permission check
-    - no human approval
+    Create a simulated transfer after enforcing
+    deterministic authorization.
     """
+
+    if "transfer:create" not in context.permissions:
+
+        print(
+            f"[AUTHZ] DENY transfer permission "
+            f"user={context.username}"
+        )
+
+        return "Transfer not permitted."
+
+    if source_customer_id not in context.authorized_customer_ids:
+
+        print(
+            f"[AUTHZ] DENY transfer source "
+            f"user={context.username} "
+            f"customer_id={source_customer_id}"
+        )
+
+        return "Transfer not permitted."
+
+    if amount_chf <= 0:
+
+        return "Invalid transfer amount."
 
     transfer = {
         "transfer_id": str(uuid4()),
@@ -108,18 +127,20 @@ def create_transfer_logic(
     )
 
 
-@tool
+@tool(needs_approval=True)
 def create_transfer(
     context: RunContextWrapper[AppContext],
     source_customer_id: str,
     destination_account: str,
-    amount_chf: int
+    amount_chf: int,
 ) -> str:
     """
     Create a simulated CHF transfer.
 
     This tool creates a local demonstration transfer only.
     No real financial transaction occurs.
+
+    Human approval is required before execution.
 
     Args:
         source_customer_id:

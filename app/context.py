@@ -7,3 +7,4 @@ class AppContext:
     user_id: str
     role: str
     authorized_customer_ids: list[str]
+    permissions: list[str]
