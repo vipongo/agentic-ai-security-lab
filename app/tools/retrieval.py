@@ -3,6 +3,7 @@ from agents.decorators import tool
 
 from app.context import AppContext
 from app.rag.chroma_store import get_collection
+from app.security.content_security import scan_untrusted_content
 
 
 def document_access_filter(
@@ -77,19 +78,44 @@ def search_documents_logic(
         documents,
         metadatas
     ):
+        source = metadata["source"]
+        owner = metadata["owner"]
+
         print(
             f"[RAG] Retrieved "
-            f"source={metadata['source']} "
-            f"owner={metadata['owner']}"
+            f"source={source} "
+            f"owner={owner}"
         )
 
+        # SECURITY CONTROL:
+        # Inspect retrieved content before returning it to the LLM.
+        scan_result = scan_untrusted_content(
+            document
+        )
+
+        if not scan_result.safe:
+            print(
+                f"[SECURITY] BLOCKED suspicious RAG content "
+                f"source={source} "
+                f"rule={scan_result.matched_rule}"
+            )
+            continue
+
+        # Safe documents are still explicitly marked as untrusted data.
         output.append(
             f"""
-SOURCE: {metadata["source"]}
+<UNTRUSTED_RETRIEVED_CONTENT
+source="{source}"
+owner="{owner}">
 
 {document}
+
+</UNTRUSTED_RETRIEVED_CONTENT>
 """
         )
+
+    if not output:
+        return "No safe authorized documents were found."
 
     return "\n---\n".join(output)
 
