@@ -148,7 +148,7 @@ Security-critical decisions therefore remain in deterministic application logic.
 
 # Current Release
 
-## `v0.12-security-findings`
+## `v1.0.0-Agentic-AI-Security-Lab`
 
 The current repository state combines:
 
@@ -160,6 +160,7 @@ The current repository state combines:
 - OWASP LLM / Agentic mappings;
 - detailed per-finding security documentation;
 - explicit residual-risk analysis.
+- clean repository for Quick Start 
 
 ---
 
@@ -200,6 +201,79 @@ The full Mermaid architecture and trust-boundary analysis are documented in:
 ```
 
 ---
+
+# Quick Start
+
+## Prerequisites
+
+- Python 3.11+
+- Node.js / npm for Promptfoo
+- OpenAI API key
+
+## Installation
+
+```bash
+git clone https://github.com/<username>/agentic-ai-security-lab.git
+cd agentic-ai-security-lab
+
+python -m venv .venv
+```
+
+## Windows PowerShell
+
+```PowerShell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Create the environment file:
+
+```PowerShell
+Copy-Item .env.example .env
+```
+
+Then set:
+```Dotenv
+OPENAI_API_KEY="<your_api_key_here>"
+```
+
+## Initialize the RAG Knowledge Base
+
+```PowerShell
+python -m app.rag.ingest
+```
+
+## Run the Banking Agent
+
+Alice:
+```PowerShell
+python -m app.main --user alice
+```
+
+Bob:
+```PowerShell
+python -m app.main --user bob
+```
+
+## Run Security Regression Tests
+
+```powershell
+python -m pytest .\tests\
+```
+
+## Run Automated Red-Team Testing
+
+```PowerShell
+cd redteam
+npx promptfoo@latest redteam run
+```
+
+View the report:
+```PowerShell
+npx promptfoo@latest redteam report
+```
+
+
 
 # Trust Model
 
@@ -1023,6 +1097,7 @@ The Git history intentionally preserves significant vulnerable and hardened chec
 | `v0.10-automated-redteam-controls` | Promptfoo + adversarial remediation |
 | `v0.11-threat-model` | STRIDE / OWASP threat model |
 | `v0.12-security-findings` | Formal per-finding documentation |
+| `v1.0.0-Agentic-AI-Security-Lab` | Complete agentic AI security lab |
 
 ---
 
@@ -1058,6 +1133,186 @@ The Git history intentionally preserves significant vulnerable and hardened chec
 The README under `docs/findings/` intentionally remains a short index and summary of the finding set.
 
 ---
+
+# Lessons Learned
+
+This project reinforced several practical lessons about securing agentic AI systems.
+
+## 1. The LLM cannot be the security boundary
+
+Prompt instructions are useful for shaping behavior, but they are not a reliable authorization mechanism.
+
+The strongest controls in this project were deterministic controls outside the model:
+
+- authenticated application context;
+- object-level authorization;
+- least-privilege tool exposure;
+- structured validation;
+- human approval;
+- rate limiting.
+
+The application remains secure even when the model is manipulated because the model does not control those decisions.
+
+## 2. Authorization must exist on every access path
+
+Protecting one interface does not automatically protect another.
+
+Customer authorization was initially enforced on structured customer lookup while RAG retrieval and transfer execution represented separate paths to the same underlying resources.
+
+Each path therefore required its own authorization checks.
+
+```text
+read authorization
+        ≠
+retrieval authorization
+        ≠
+action authorization
+```
+
+## 3. Retrieval authorization must happen before the LLM sees the data
+
+Filtering an answer after unauthorized documents have already entered model context is too late.
+
+RAG access control must be enforced during retrieval so unauthorized content never reaches the model.
+
+This became one of the key architectural principles of the project.
+
+## 4. Authorized data is not automatically trusted data
+
+A document may be legitimately accessible and still contain malicious instructions.
+
+This means two separate questions must be answered:
+
+```Is the user allowed to retrieve this document?```
+
+and:
+
+```Should instructions inside this document be trusted?```
+RAG authorization and prompt-injection protection therefore solve different problems.
+
+## 5. Prompt injection is better contained than "solved"
+
+Direct and indirect prompt injection cannot be treated as completely eliminated.
+
+Detection can be bypassed and model behavior remains probabilistic.
+
+The more robust objective is therefore:
+
+```Assume that model behavior may be manipulated and ensure that manipulated behavior cannot cross deterministic security boundaries.```
+
+## 6. Human approval and authorization are different controls
+
+Human approval does not grant permission.
+
+A transfer must still satisfy:
+
+```text
+tool availability
+        +
+structured validation
+        +
+authorization
+        +
+human approval
+```
+
+An approving human must not be able to override a failed authorization decision merely by approving the action.
+
+## 7. Agent memory is part of the security perimeter
+
+Persistent conversation state can contain sensitive information and can create cross-user disclosure paths even when tools themselves are correctly authorized.
+
+Session isolation therefore has to be treated as an access-control problem rather than only a conversation-management feature.
+
+## 8. Least privilege applies to agent capabilities
+
+A tool should not merely reject unauthorized use after invocation.
+
+Where possible, capabilities that a user does not require should not be exposed to the model at all.
+
+Runtime tool filtering reduces the model's available action surface and limits the impact of prompt injection or unexpected reasoning.
+
+## 9. Validation, authorization and approval solve different problems
+
+These controls are complementary:
+
+```text
+Validation
+→ Is the request structurally acceptable?
+
+Authorization
+→ Is this user allowed to perform it?
+
+Approval
+→ Should this sensitive action proceed now?
+
+Rate limiting
+→ How frequently may it be attempted?
+```
+Conflating these controls creates gaps.
+
+## 10. System prompts should not contain secrets
+
+Automated prompt-extraction testing showed that models may reconstruct or paraphrase internal instructions even when they resist direct requests for the exact prompt.
+
+The system prompt should therefore be treated as potentially discoverable.
+
+Credentials, authorization secrets and sensitive configuration should remain outside it.
+
+## 11. Security testing needs deterministic and probabilistic layers
+
+Testint and Promptfoo identified different classes of problems.
+
+Deterministic tests verified security invariants such as:
+
+- customer authorization;
+- RAG ACL enforcement;
+- session isolation;
+- tool permissions;
+- transfer authorization;
+- rate limiting.
+
+Promptfoo tested whether adversarial natural language could still manipulate the complete system.
+
+Neither testing approach was sufficient on its own.
+
+## 12. Automated red-team failures require interpretation
+
+A failed adversarial evaluation does not always mean that the core security boundary failed.
+
+During testing, some failures represented:
+
+- genuine authorization or behavioral weaknesses;
+- system-instruction disclosure;
+- capability disclosure;
+- evaluator-policy mismatches;
+- residual model behavior where deterministic controls still held.
+
+Security results therefore need technical review rather than relying only on a pass percentage.
+
+## 13. Authorization does not imply unrestricted data use
+
+The purpose-limitation finding exposed a subtler issue.
+
+A relationship manager may be authorized to access customer information for banking purposes without being authorized to reuse that information for unrelated personal or social purposes.
+
+```WHO may access WHAT```
+
+is only part of the problem.
+
+Security and privacy must also consider:
+
+```WHY may the data be used?```
+
+## 14. Residual risk is part of the result
+
+The objective of this project was not to demonstrate a perfectly secure LLM.
+
+Documenting limitations such as prompt-injection bypasses, system-prompt reconstruction, local rate limiting and human social-engineering risk provides a more realistic security assessment than claiming complete protection.
+
+The main architectural lesson from the project is:
+
+```Assume the model can be manipulated. Keep identity, authorization, validation and high-impact execution controls outside the model, minimize its privileges, and continuously test the boundaries around it.```
 
 # Residual Risks
 
@@ -1113,23 +1368,19 @@ Residual risk is considered part of the security result rather than something to
 - [x] Detailed SEC-001 – SEC-009 reports
 - [x] Residual-risk documentation
 - [x] Release `v0.12-security-findings`
+- [x] Final setup / installation instructions
+- [x] `.env.example`
+- [x] Dependency documentation
+- [x] Final architecture rendering
+- [x] Lessons learned
+- [x] Final repository cleanup
 
 ---
 
 # Remaining Work
 
-The technical security implementation and documentation are now largely complete.
-
-Remaining work is primarily repository and presentation polish:
-
-- [ ] Final setup / installation instructions
-- [ ] `.env.example`
-- [ ] Dependency documentation
-- [ ] Final architecture rendering
-- [ ] Selected test-result examples
-- [ ] Review Promptfoo reports for environment-specific metadata
-- [ ] Lessons learned
-- [ ] Final repository cleanup
+For this project, the work can still be continued by trying to more promptfoo plugins and find more vulnerabilities.
+The project could also use different type of agents roles and thus explore access controls this way.
 
 ---
 

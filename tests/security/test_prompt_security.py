@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
+from app.context import AppContext
 import app.main as main_module
 from app.security.prompt_security import (
     SYSTEM_PROMPT_CANARY,
@@ -118,8 +118,16 @@ def test_blocked_prompt_never_reaches_agent(
         ],
     )
 
-    fake_context = SimpleNamespace(
+    fake_context = AppContext(
         username="alice",
+        user_id="USR001",
+        role="advisor",
+        authorized_customer_ids=["CUST001"],
+        permissions=[
+            "customer:read",
+            "document:read",
+            "transfer:create",
+        ],
     )
 
     monkeypatch.setattr(
@@ -217,10 +225,17 @@ def test_system_prompt_canary_is_not_displayed_to_user(
         ],
     )
 
-    fake_context = SimpleNamespace(
+    fake_context = AppContext(
         username="alice",
+        user_id="USR001",
+        role="advisor",
+        authorized_customer_ids=["CUST001"],
+        permissions=[
+            "customer:read",
+            "document:read",
+            "transfer:create",
+        ],
     )
-
     monkeypatch.setattr(
         main_module,
         "get_user_context",
