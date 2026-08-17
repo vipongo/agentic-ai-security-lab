@@ -4,7 +4,7 @@ from app.context import AppContext
 from app.tools.customer import get_customer
 from app.tools.calculator import calculate_percentage
 from app.tools.retrieval import search_documents
-
+from app.tools.transfer import create_transfer
 
 
 banking_agent = Agent[AppContext](
@@ -25,6 +25,10 @@ banking_agent = Agent[AppContext](
 
     3. calculate_percentage
     Use for percentage calculations.
+
+    4. create_transfer
+    Use this tool when a user explicitly requests a transfer.
+    This tool operates only on simulated demonstration data.
 
 
     SECURITY RULES
@@ -56,6 +60,7 @@ banking_agent = Agent[AppContext](
     tools=[
         get_customer,
         calculate_percentage,
-        search_documents
+        search_documents,
+        create_transfer
     ]
 )
