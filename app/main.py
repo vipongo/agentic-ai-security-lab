@@ -6,6 +6,7 @@ from agents import Runner
 from app.agent import banking_agent
 from app.data_loader import get_user_context
 from app.session_manager import get_session
+from app.security.prompt_security import scan_user_prompt
 
 def ask_for_approval(
     tool_name: str,
@@ -58,6 +59,18 @@ async def main():
 
         if message.lower() == "exit":
             break
+
+        prompt_scan = scan_user_prompt(
+            message
+        )
+
+        if prompt_scan.suspicious:
+
+            print(
+                f"[SECURITY] Suspicious user prompt "
+                f"user={user_context.username} "
+                f"rule={prompt_scan.matched_rule}"
+            )
 
         result = await Runner.run(
             banking_agent,
