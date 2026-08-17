@@ -1,0 +1,47 @@
+# Security Findings
+
+This directory documents security findings identified during the
+development and adversarial testing of the Agentic AI Security Lab.
+
+The application was intentionally developed using a
+vulnerable-first methodology:
+
+1. introduce or retain an insecure behavior;
+2. reproduce the security weakness;
+3. document the root cause and impact;
+4. implement deterministic security controls;
+5. verify the remediation;
+6. retain residual-risk analysis where complete prevention is not
+   realistic.
+
+All customer, account and transaction data used by this project is
+fictional.
+
+## Findings Summary
+
+| ID | Finding | Severity | Status |
+|---|---|---:|---|
+| SEC-001 | Missing customer object authorization | High | Remediated |
+| SEC-002 | Missing RAG retrieval authorization | High | Remediated |
+| SEC-003 | Indirect prompt injection / RAG poisoning | High | Mitigated |
+| SEC-004 | Direct prompt injection | High | Mitigated |
+| SEC-005 | System prompt / instruction extraction | Medium | Mitigated / residual risk |
+| SEC-006 | Cross-user session leakage | High | Remediated |
+| SEC-007 | Excessive agency / missing human approval | High | Remediated |
+| SEC-008 | Missing transfer authorization | High | Remediated |
+| SEC-009 | Customer-data purpose limitation | Medium | Residual risk / policy hardened |
+
+## Security Principles Demonstrated
+
+The remediation work follows several core principles:
+
+- authorization is enforced outside the LLM;
+- authenticated identity cannot be changed through natural-language input;
+- retrieval authorization is applied before documents enter model context;
+- retrieved documents are treated as untrusted content;
+- sensitive tools follow least privilege;
+- high-impact operations require human approval;
+- session state is isolated by authenticated user;
+- tool inputs use structured validation;
+- security decisions are recorded through structured audit events;
+- automated red-team testing supplements deterministic security tests.
