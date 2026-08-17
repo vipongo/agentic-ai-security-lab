@@ -17,11 +17,8 @@ def get_session(
     username: str
 ) -> SQLiteSession:
     """
-    Return the conversation session used by the application.
-
-    WARNING:
-    This initial implementation intentionally uses one shared
-    session ID to demonstrate cross-user memory leakage.
+    Return an isolated conversation session for the
+    authenticated application user.
     """
 
     SESSION_DB.parent.mkdir(
@@ -29,8 +26,17 @@ def get_session(
         exist_ok=True
     )
 
-    # INTENTIONALLY VULNERABLE
-    session_id = "default"
+    # SECURITY CONTROL:
+    # Bind persistent conversation history to the
+    # authenticated application identity.
+    session_id = (
+        f"user:{username}:default"
+    )
+
+    print(
+        f"[SESSION] user={username} "
+        f"session_id={session_id}"
+    )
 
     return SQLiteSession(
         session_id=session_id,
