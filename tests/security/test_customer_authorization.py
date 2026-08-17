@@ -27,7 +27,7 @@ def test_alice_cannot_access_bobs_customer():
         customer_id="CUST002"
     )
 
-    assert result == "ACCESS DENIED"
+    assert result == "Customer not found or access denied."
 
 
 def test_bob_can_access_his_customer():
@@ -53,4 +53,4 @@ def test_bob_cannot_access_alices_customer():
         customer_id="CUST001"
     )
 
-    assert result == "ACCESS DENIED"
+    assert result == "Customer not found or access denied."
