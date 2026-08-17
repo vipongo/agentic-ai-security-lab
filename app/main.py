@@ -13,6 +13,10 @@ from app.security.prompt_security import (
     should_block_prompt,
 )
 from app.security.rate_limit import agent_rate_limiter
+from app.security.request_policy import (
+    evaluate_request,
+    policy_response,
+)
 
 
 def ask_for_approval(
@@ -75,6 +79,31 @@ async def main():
         # Exit before applying rate limiting.
         if message.lower() == "exit":
             break
+
+        policy_decision = evaluate_request(
+            user_context,
+            message,
+        )
+
+        if not policy_decision.allowed:
+
+            audit_event(
+                event_type="REQUEST_POLICY",
+                username=user_context.username,
+                outcome="DENY",
+                reason=policy_decision.reason,
+            )
+
+            print()
+            print(
+                "Assistant:",
+                policy_response(
+                    policy_decision
+                ),
+            )
+            print()
+
+            continue
 
         # --------------------------------------------------
         # RATE LIMITING

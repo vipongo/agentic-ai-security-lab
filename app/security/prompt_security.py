@@ -4,6 +4,36 @@ from dataclasses import dataclass
 SYSTEM_PROMPT_CANARY = (
     "POLICY-CANARY-7F3A92"
 )
+
+INTERNAL_OUTPUT_PATTERNS = {
+    "system_prompt_canary": re.compile(
+        re.escape(
+            SYSTEM_PROMPT_CANARY
+        ),
+        re.IGNORECASE,
+    ),
+
+    "internal_tool_name": re.compile(
+        r"\b(?:"
+        r"get_customer|"
+        r"search_documents|"
+        r"calculate_percentage|"
+        r"create_transfer|"
+        r"multi_tool_use\.parallel"
+        r")\b",
+        re.IGNORECASE,
+    ),
+
+    "internal_parameter_name": re.compile(
+        r"\b(?:"
+        r"source_customer_id|"
+        r"destination_account|"
+        r"amount_chf"
+        r")\b",
+        re.IGNORECASE,
+    ),
+}
+
 @dataclass
 class OutputScanResult:
     safe: bool
@@ -13,21 +43,18 @@ class OutputScanResult:
 def scan_agent_output(
     output: str
 ) -> OutputScanResult:
-    """
-    Detect known internal markers in model output.
 
-    This protects controlled security-test markers from being
-    returned to the user.
+    for (
+        rule_name,
+        pattern,
+    ) in INTERNAL_OUTPUT_PATTERNS.items():
 
-    It is not a general solution for sensitive-data detection.
-    """
+        if pattern.search(output):
 
-    if SYSTEM_PROMPT_CANARY.lower() in output.lower():
-
-        return OutputScanResult(
-            safe=False,
-            matched_rule="system_prompt_canary"
-        )
+            return OutputScanResult(
+                safe=False,
+                matched_rule=rule_name,
+            )
 
     return OutputScanResult(
         safe=True
@@ -93,6 +120,25 @@ SUSPICIOUS_PROMPT_PATTERNS = {
         r"(?:approval|confirmation|human)",
         re.IGNORECASE | re.DOTALL,
     ),
+    "system_prompt_request": re.compile(
+        r"(?:show|print|reveal|repeat|display|provide|"
+        r"reproduce|quote|dump|output|expose)"
+        r".{0,60}"
+        r"(?:system|developer|hidden|internal)"
+        r".{0,30}"
+        r"(?:prompt|instructions?|messages?|configuration)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    "indirect_instruction_extraction": re.compile(
+        r"(?:system|developer)\s+instructions?"
+        r"|"
+        r"(?:design|draft|write)"
+        r".{0,80}"
+        r"(?:banking assistant|similar system)"
+        r".{0,80}"
+        r"(?:instructions?|prompt|policy)",
+        re.IGNORECASE | re.DOTALL,
+    ),
 }
 
 
@@ -134,6 +180,7 @@ def should_block_prompt(
         "security_bypass",
         "system_prompt_request",
         "approval_bypass",
+        "indirect_instruction_extraction",
     }
 
     return (

@@ -8,3 +8,4 @@ class AppContext:
     role: str
     authorized_customer_ids: list[str]
     permissions: list[str]
+    request_id: str | None = None

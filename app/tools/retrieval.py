@@ -7,6 +7,7 @@ from app.security.content_security import scan_untrusted_content
 from app.security.tool_access import document_read_enabled
 from app.security.tool_schemas import DocumentSearchQuery
 from app.security.audit import audit_event
+from app.security.request_policy import check_resource_scope
 
 
 def document_access_filter(
@@ -50,6 +51,24 @@ def search_documents_logic(
 
     # SECURITY CONTROL:
     # Restrict the candidate document set BEFORE semantic retrieval.
+    resource_decision = (
+    check_resource_scope(
+        context,
+        query,
+    )
+)
+
+    if not resource_decision.allowed:
+
+        audit_event(
+            event_type="RAG_QUERY_AUTHZ",
+            username=context.username,
+            outcome="DENY",
+            reason=resource_decision.reason,
+        )
+
+        return "Request not permitted."
+        
     acl_filter = document_access_filter(context)
 
     audit_event(
