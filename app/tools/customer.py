@@ -5,11 +5,13 @@ from agents.decorators import tool
 
 from app.context import AppContext
 from app.data_loader import load_customers
+from app.security.tool_access import customer_read_enabled
+from app.security.tool_schemas import CustomerId
 
 
 def lookup_customer(
     context: AppContext,
-    customer_id: str
+    customer_id: CustomerId
 ) -> str:
     """
     Retrieve customer information after enforcing
@@ -37,10 +39,12 @@ def lookup_customer(
 
     return json.dumps(customers[customer_id])
 
-@tool
+@tool(
+    is_enabled=customer_read_enabled
+)
 def get_customer(
     context: RunContextWrapper[AppContext],
-    customer_id: str
+    customer_id: CustomerId
 ) -> str:
     """
     Retrieve structured customer information using an exact customer ID.

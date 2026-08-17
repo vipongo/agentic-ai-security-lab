@@ -4,6 +4,8 @@ from agents.decorators import tool
 from app.context import AppContext
 from app.rag.chroma_store import get_collection
 from app.security.content_security import scan_untrusted_content
+from app.security.tool_access import document_read_enabled
+from app.security.tool_schemas import DocumentSearchQuery
 
 
 def document_access_filter(
@@ -27,7 +29,7 @@ def document_access_filter(
 
 def search_documents_logic(
     context: AppContext,
-    query: str
+    query: DocumentSearchQuery
 ) -> str:
     """
     Search authorized internal documents.
@@ -120,10 +122,12 @@ owner="{owner}">
     return "\n---\n".join(output)
 
 
-@tool
+@tool(
+    is_enabled=document_read_enabled
+)
 def search_documents(
     context: RunContextWrapper[AppContext],
-    query: str
+    query: DocumentSearchQuery
 ) -> str:
     """
     Search internal banking documents that the authenticated

@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -7,6 +8,13 @@ from agents import RunContextWrapper
 from agents.decorators import tool
 
 from app.context import AppContext
+from app.security.tool_access import transfer_create_enabled
+
+from app.security.tool_schemas import (
+    CustomerId,
+    DestinationAccount,
+    TransferAmountCHF,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -92,6 +100,18 @@ def create_transfer_logic(
 
         return "Invalid transfer amount."
 
+    if not re.fullmatch(
+        r"DEMO-ACCOUNT-\d{3,6}",
+        destination_account
+    ):
+
+        print(
+            f"[VALIDATION] DENY destination "
+            f"user={context.username}"
+        )
+
+        return "Invalid transfer request."
+
     transfer = {
         "transfer_id": str(uuid4()),
         "source_customer_id": source_customer_id,
@@ -127,12 +147,15 @@ def create_transfer_logic(
     )
 
 
-@tool(needs_approval=True)
+@tool(
+    is_enabled=transfer_create_enabled,
+    needs_approval=True
+)
 def create_transfer(
     context: RunContextWrapper[AppContext],
-    source_customer_id: str,
-    destination_account: str,
-    amount_chf: int,
+    source_customer_id: CustomerId,
+    destination_account: DestinationAccount,
+    amount_chf: TransferAmountCHF
 ) -> str:
     """
     Create a simulated CHF transfer.

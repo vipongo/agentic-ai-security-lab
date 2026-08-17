@@ -71,13 +71,14 @@ def test_authorized_transfer_logic_executes(
     result = transfer_module.create_transfer_logic(
         context=alice,
         source_customer_id="CUST001",
-        destination_account=DESTINATION_ACCOUNT,
+        destination_account="DEMO-ACCOUNT-999",
         amount_chf=1000
     )
 
     transfer = json.loads(result)
 
     assert transfer["source_customer_id"] == "CUST001"
+    assert transfer["destination_account"] == "DEMO-ACCOUNT-999"
     assert transfer["requested_by"] == "alice"
     assert transfer["amount_chf"] == 1000
     assert transfer["status"] == "SIMULATED_EXECUTED"
@@ -216,3 +217,78 @@ def test_human_can_approve_transfer(
     )
 
     assert approved is True
+
+def test_invalid_destination_creates_no_transfer(
+    tmp_path,
+    monkeypatch,
+):
+    test_file = (
+        tmp_path
+        / "transfers.json"
+    )
+
+    monkeypatch.setattr(
+        transfer_module,
+        "TRANSFERS_FILE",
+        test_file,
+    )
+
+    alice = create_alice_context()
+
+    result = (
+        transfer_module
+        .create_transfer_logic(
+            context=alice,
+            source_customer_id="CUST001",
+            destination_account="INVALID-ACCOUNT",
+            amount_chf=1000,
+        )
+    )
+
+    assert (
+        result
+        == "Invalid transfer request."
+    )
+
+    assert (
+        transfer_module.load_transfers()
+        == []
+    )
+
+
+def test_non_positive_amount_creates_no_transfer(
+    tmp_path,
+    monkeypatch,
+):
+    test_file = (
+        tmp_path
+        / "transfers.json"
+    )
+
+    monkeypatch.setattr(
+        transfer_module,
+        "TRANSFERS_FILE",
+        test_file,
+    )
+
+    alice = create_alice_context()
+
+    result = (
+        transfer_module
+        .create_transfer_logic(
+            context=alice,
+            source_customer_id="CUST001",
+            destination_account="DEMO-ACCOUNT-999",
+            amount_chf=0,
+        )
+    )
+
+    assert (
+        result
+        == "Invalid transfer amount."
+    )
+
+    assert (
+        transfer_module.load_transfers()
+        == []
+    )
