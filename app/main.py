@@ -7,6 +7,12 @@ from app.agent import banking_agent
 from app.data_loader import get_user_context
 from app.session_manager import get_session
 from app.security.prompt_security import scan_user_prompt
+from app.security.prompt_security import (
+    scan_user_prompt,
+    scan_agent_output,
+    should_block_prompt,
+)
+
 
 def ask_for_approval(
     tool_name: str,
@@ -71,6 +77,18 @@ async def main():
                 f"user={user_context.username} "
                 f"rule={prompt_scan.matched_rule}"
             )
+
+            if should_block_prompt(
+                prompt_scan
+            ):
+                print()
+                print(
+                    "Assistant:",
+                    "I can't process that request."
+                )
+                print()
+
+                continue
 
         result = await Runner.run(
             banking_agent,
@@ -142,10 +160,32 @@ async def main():
             )
 
 
+        final_output = str(
+            result.final_output
+        )
+
+        output_scan = scan_agent_output(
+            final_output
+        )
+
+        if not output_scan.safe:
+
+            print(
+                f"[SECURITY] BLOCKED agent output "
+                f"user={user_context.username} "
+                f"rule={output_scan.matched_rule}"
+            )
+
+            final_output = (
+                "I can't provide internal application "
+                "instructions or configuration."
+            )
+
+
         print()
         print(
             "Assistant:",
-            result.final_output
+            final_output
         )
 
 

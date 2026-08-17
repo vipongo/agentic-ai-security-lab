@@ -1,6 +1,37 @@
 import re
 from dataclasses import dataclass
 
+SYSTEM_PROMPT_CANARY = (
+    "POLICY-CANARY-7F3A92"
+)
+@dataclass
+class OutputScanResult:
+    safe: bool
+    matched_rule: str | None = None
+
+
+def scan_agent_output(
+    output: str
+) -> OutputScanResult:
+    """
+    Detect known internal markers in model output.
+
+    This protects controlled security-test markers from being
+    returned to the user.
+
+    It is not a general solution for sensitive-data detection.
+    """
+
+    if SYSTEM_PROMPT_CANARY.lower() in output.lower():
+
+        return OutputScanResult(
+            safe=False,
+            matched_rule="system_prompt_canary"
+        )
+
+    return OutputScanResult(
+        safe=True
+    )
 
 @dataclass
 class PromptScanResult:
@@ -87,4 +118,26 @@ def scan_user_prompt(
 
     return PromptScanResult(
         suspicious=False
+    )
+
+def should_block_prompt(
+    scan_result: PromptScanResult
+) -> bool:
+    """
+    Decide which detected patterns should be rejected before
+    reaching the model.
+    """
+
+    HIGH_CONFIDENCE_BLOCK_RULES = {
+        "instruction_override",
+        "role_override",
+        "security_bypass",
+        "system_prompt_request",
+        "approval_bypass",
+    }
+
+    return (
+        scan_result.suspicious
+        and scan_result.matched_rule
+        in HIGH_CONFIDENCE_BLOCK_RULES
     )
