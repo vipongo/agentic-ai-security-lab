@@ -5,7 +5,7 @@ from agents import Runner
 
 from app.agent import banking_agent
 from app.data_loader import get_user_context
-
+from app.session_manager import get_session
 
 async def main():
 
@@ -20,6 +20,9 @@ async def main():
     args = parser.parse_args()
 
     user_context = get_user_context(args.user)
+    session = get_session(
+        user_context.username
+    )
 
     print(f"Logged in as: {user_context.username}")
     print("Type 'exit' to quit.")
@@ -35,7 +38,8 @@ async def main():
         result = await Runner.run(
             banking_agent,
             message,
-            context=user_context
+            context=user_context,
+            session=session
         )
 
         print()
