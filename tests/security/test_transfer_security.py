@@ -5,6 +5,8 @@ import app.tools.transfer as transfer_module
 from app.context import AppContext
 from app.main import ask_for_approval
 
+from app.security.rate_limit import SlidingWindowRateLimiter
+
 
 DESTINATION_ACCOUNT = "CH9300000000000000000"
 
@@ -292,3 +294,80 @@ def test_non_positive_amount_creates_no_transfer(
         transfer_module.load_transfers()
         == []
     )
+
+
+
+
+def test_rate_limited_transfer_creates_no_new_record(
+    tmp_path,
+    monkeypatch,
+):
+    test_file = (
+        tmp_path
+        / "transfers.json"
+    )
+
+    monkeypatch.setattr(
+        transfer_module,
+        "TRANSFERS_FILE",
+        test_file,
+    )
+
+    limiter = SlidingWindowRateLimiter(
+        max_requests=1,
+        window_seconds=300,
+    )
+
+    monkeypatch.setattr(
+        transfer_module,
+        "transfer_rate_limiter",
+        limiter,
+    )
+
+    alice = create_alice_context()
+
+    first_result = (
+        transfer_module
+        .create_transfer_logic(
+            context=alice,
+            source_customer_id="CUST001",
+            destination_account=(
+                "DEMO-ACCOUNT-999"
+            ),
+            amount_chf=1000,
+        )
+    )
+
+    first_transfer = json.loads(
+        first_result
+    )
+
+    assert (
+        first_transfer["status"]
+        == "SIMULATED_EXECUTED"
+    )
+
+    second_result = (
+        transfer_module
+        .create_transfer_logic(
+            context=alice,
+            source_customer_id="CUST001",
+            destination_account=(
+                "DEMO-ACCOUNT-999"
+            ),
+            amount_chf=1000,
+        )
+    )
+
+    assert second_result == (
+        "Transfer request temporarily "
+        "rate limited."
+    )
+
+    transfers = (
+        transfer_module.load_transfers()
+    )
+
+    # Only the first request caused
+    # a protected side effect.
+    assert len(transfers) == 1

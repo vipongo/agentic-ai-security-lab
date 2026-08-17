@@ -6,12 +6,13 @@ from agents import Runner
 from app.agent import banking_agent
 from app.data_loader import get_user_context
 from app.session_manager import get_session
-from app.security.prompt_security import scan_user_prompt
+from app.security.audit import audit_event
 from app.security.prompt_security import (
-    scan_user_prompt,
     scan_agent_output,
+    scan_user_prompt,
     should_block_prompt,
 )
+from app.security.rate_limit import agent_rate_limiter
 
 
 def ask_for_approval(
@@ -35,8 +36,9 @@ def ask_for_approval(
 
     return decision in {
         "y",
-        "yes"
+        "yes",
     }
+
 
 async def main():
 
@@ -45,17 +47,24 @@ async def main():
     parser.add_argument(
         "--user",
         required=True,
-        choices=["alice", "bob"]
+        choices=["alice", "bob"],
     )
 
     args = parser.parse_args()
 
-    user_context = get_user_context(args.user)
+    user_context = get_user_context(
+        args.user
+    )
+
     session = get_session(
         user_context.username
     )
 
-    print(f"Logged in as: {user_context.username}")
+    print(
+        f"Logged in as: "
+        f"{user_context.username}"
+    )
+
     print("Type 'exit' to quit.")
     print()
 
@@ -63,8 +72,55 @@ async def main():
 
         message = input("You: ")
 
+        # Exit before applying rate limiting.
         if message.lower() == "exit":
             break
+
+        # --------------------------------------------------
+        # RATE LIMITING
+        # --------------------------------------------------
+
+        rate_result = (
+            agent_rate_limiter.check(
+                user_context.username
+            )
+        )
+
+        if not rate_result.allowed:
+
+            audit_event(
+                event_type="RATE_LIMIT",
+                username=user_context.username,
+                outcome="DENY",
+                retry_after_seconds=(
+                    rate_result.retry_after_seconds
+                ),
+            )
+
+            print()
+            print(
+                "Assistant:",
+                (
+                    "Too many requests. "
+                    "Try again in approximately "
+                    f"{rate_result.retry_after_seconds} "
+                    "seconds."
+                ),
+            )
+            print()
+
+            continue
+
+        audit_event(
+            event_type="RATE_LIMIT",
+            username=user_context.username,
+            outcome="ALLOW",
+            remaining=rate_result.remaining,
+        )
+
+        # --------------------------------------------------
+        # INPUT / PROMPT SECURITY
+        # --------------------------------------------------
 
         prompt_scan = scan_user_prompt(
             message
@@ -72,30 +128,48 @@ async def main():
 
         if prompt_scan.suspicious:
 
-            print(
-                f"[SECURITY] Suspicious user prompt "
-                f"user={user_context.username} "
-                f"rule={prompt_scan.matched_rule}"
+            audit_event(
+                event_type="PROMPT_SECURITY",
+                username=user_context.username,
+                outcome="DETECTED",
+                rule=prompt_scan.matched_rule,
+                prompt_length=len(message),
             )
 
             if should_block_prompt(
                 prompt_scan
             ):
+
+                audit_event(
+                    event_type="PROMPT_SECURITY",
+                    username=user_context.username,
+                    outcome="BLOCK",
+                    rule=prompt_scan.matched_rule,
+                )
+
                 print()
                 print(
                     "Assistant:",
-                    "I can't process that request."
+                    "I can't process that request.",
                 )
                 print()
 
                 continue
 
+        # --------------------------------------------------
+        # AGENT EXECUTION
+        # --------------------------------------------------
+
         result = await Runner.run(
             banking_agent,
             message,
             context=user_context,
-            session=session
+            session=session,
         )
+
+        # --------------------------------------------------
+        # HUMAN-IN-THE-LOOP APPROVAL
+        # --------------------------------------------------
 
         while result.interruptions:
 
@@ -107,30 +181,37 @@ async def main():
                     getattr(
                         interruption,
                         "tool_name",
-                        None
+                        None,
                     )
                     or getattr(
                         interruption,
                         "name",
-                        "unknown_tool"
+                        "unknown_tool",
                     )
                 )
 
                 arguments = getattr(
                     interruption,
                     "arguments",
-                    None
+                    None,
                 )
 
                 approved = ask_for_approval(
                     tool_name=tool_name,
-                    arguments=arguments
+                    arguments=arguments,
                 )
 
                 if approved:
 
+                    audit_event(
+                        event_type="HUMAN_APPROVAL",
+                        username=user_context.username,
+                        outcome="APPROVED",
+                        tool=tool_name,
+                    )
+
                     print(
-                        "[APPROVAL] APPROVED "
+                        f"[APPROVAL] APPROVED "
                         f"tool={tool_name}"
                     )
 
@@ -140,25 +221,36 @@ async def main():
 
                 else:
 
+                    audit_event(
+                        event_type="HUMAN_APPROVAL",
+                        username=user_context.username,
+                        outcome="REJECTED",
+                        tool=tool_name,
+                    )
+
                     print(
-                        "[APPROVAL] REJECTED "
+                        f"[APPROVAL] REJECTED "
                         f"tool={tool_name}"
                     )
 
                     state.reject(
                         interruption,
                         rejection_message=(
-                            "The requested high-impact action "
-                            "was rejected by the human approver."
-                        )
+                            "The requested high-impact "
+                            "action was rejected by the "
+                            "human approver."
+                        ),
                     )
 
             result = await Runner.run(
                 banking_agent,
                 state,
-                session=session
+                session=session,
             )
 
+        # --------------------------------------------------
+        # OUTPUT SECURITY
+        # --------------------------------------------------
 
         final_output = str(
             result.final_output
@@ -170,23 +262,29 @@ async def main():
 
         if not output_scan.safe:
 
-            print(
-                f"[SECURITY] BLOCKED agent output "
-                f"user={user_context.username} "
-                f"rule={output_scan.matched_rule}"
+            audit_event(
+                event_type="OUTPUT_SECURITY",
+                username=user_context.username,
+                outcome="BLOCK",
+                rule=output_scan.matched_rule,
             )
+
 
             final_output = (
                 "I can't provide internal application "
                 "instructions or configuration."
             )
 
+        # --------------------------------------------------
+        # USER OUTPUT
+        # --------------------------------------------------
 
         print()
         print(
             "Assistant:",
-            final_output
+            final_output,
         )
+        print()
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from app.rag.chroma_store import get_collection
 from app.security.content_security import scan_untrusted_content
 from app.security.tool_access import document_read_enabled
 from app.security.tool_schemas import DocumentSearchQuery
+from app.security.audit import audit_event
 
 
 def document_access_filter(
@@ -45,21 +46,17 @@ def search_documents_logic(
     The query may contain either customer names or customer IDs.
     """
 
-    print(
-        f"[RAG] User={context.username} "
-        f"Query={query}"
-    )
-
     collection = get_collection()
 
     # SECURITY CONTROL:
     # Restrict the candidate document set BEFORE semantic retrieval.
     acl_filter = document_access_filter(context)
 
-    print(
-        f"[RAG][AUTHZ] Applying ACL "
-        f"user={context.username} "
-        f"filter={acl_filter}"
+    audit_event(
+        event_type="RAG_SEARCH",
+        username=context.username,
+        outcome="START",
+        query_length=len(query),
     )
 
     results = collection.query(
@@ -83,10 +80,12 @@ def search_documents_logic(
         source = metadata["source"]
         owner = metadata["owner"]
 
-        print(
-            f"[RAG] Retrieved "
-            f"source={source} "
-            f"owner={owner}"
+        audit_event(
+            event_type="RAG_RETRIEVAL",
+            username=context.username,
+            outcome="ALLOW",
+            source=source,
+            owner=owner,
         )
 
         # SECURITY CONTROL:
@@ -96,10 +95,12 @@ def search_documents_logic(
         )
 
         if not scan_result.safe:
-            print(
-                f"[SECURITY] BLOCKED suspicious RAG content "
-                f"source={source} "
-                f"rule={scan_result.matched_rule}"
+            audit_event(
+                event_type="RAG_CONTENT_SCAN",
+                username=context.username,
+                outcome="BLOCK",
+                source=source,
+                rule=scan_result.matched_rule,
             )
             continue
 

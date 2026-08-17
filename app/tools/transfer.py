@@ -9,6 +9,8 @@ from agents.decorators import tool
 
 from app.context import AppContext
 from app.security.tool_access import transfer_create_enabled
+from app.security.audit import audit_event
+from app.security.rate_limit import transfer_rate_limiter
 
 from app.security.tool_schemas import (
     CustomerId,
@@ -79,19 +81,23 @@ def create_transfer_logic(
 
     if "transfer:create" not in context.permissions:
 
-        print(
-            f"[AUTHZ] DENY transfer permission "
-            f"user={context.username}"
+        audit_event(
+            event_type="AUTHZ_TRANSFER",
+            username=context.username,
+            outcome="DENY",
+            reason="missing_transfer_permission",
         )
 
         return "Transfer not permitted."
 
     if source_customer_id not in context.authorized_customer_ids:
 
-        print(
-            f"[AUTHZ] DENY transfer source "
-            f"user={context.username} "
-            f"customer_id={source_customer_id}"
+        audit_event(
+            event_type="AUTHZ_TRANSFER",
+            username=context.username,
+            outcome="DENY",
+            source_customer_id=source_customer_id,
+            reason="customer_not_authorized",
         )
 
         return "Transfer not permitted."
@@ -105,12 +111,40 @@ def create_transfer_logic(
         destination_account
     ):
 
-        print(
-            f"[VALIDATION] DENY destination "
-            f"user={context.username}"
+        audit_event(
+            event_type="AUTHZ_TRANSFER",
+            username=context.username,
+            outcome="DENY",
+            source_customer_id=source_customer_id,
+            reason="Wrong destination account format",
+        )
+        return "Invalid transfer request."
+
+    """
+    Rate limiting is enforced here to prevent abuse of the transfer tool.
+    """
+
+    rate_result = (
+        transfer_rate_limiter.check(
+            context.username
+        )
+    )
+
+    if not rate_result.allowed:
+
+        audit_event(
+            event_type="TRANSFER_RATE_LIMIT",
+            username=context.username,
+            outcome="DENY",
+            retry_after_seconds=(
+                rate_result.retry_after_seconds
+            ),
         )
 
-        return "Invalid transfer request."
+        return (
+            "Transfer request temporarily "
+            "rate limited."
+        )
 
     transfer = {
         "transfer_id": str(uuid4()),
@@ -134,12 +168,12 @@ def create_transfer_logic(
         transfers
     )
 
-    print(
-        f"[TRANSFER] EXECUTED "
-        f"user={context.username} "
-        f"source={source_customer_id} "
-        f"destination={destination_account} "
-        f"amount_chf={amount_chf}"
+    audit_event(
+        event_type="TRANSFER_EXECUTION",
+        username=context.username,
+        outcome="SUCCESS",
+        source_customer_id=source_customer_id,
+        amount_chf=amount_chf,
     )
 
     return json.dumps(

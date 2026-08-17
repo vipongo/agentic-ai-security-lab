@@ -2,7 +2,7 @@
 
 A hands-on AI security engineering project focused on identifying, reproducing, testing, and mitigating security risks in LLM-based agentic applications.
 
-The project implements a simplified enterprise-style banking assistant with access to:
+The project implements a simplified enterprise-style banking assistant with:
 
 - Structured customer data
 - Multiple agent tools
@@ -11,12 +11,13 @@ The project implements a simplified enterprise-style banking assistant with acce
 - Persistent multi-turn memory
 - Simulated high-impact financial actions
 - Human-in-the-loop approval
-- Direct prompt-security controls
-- Agent-output leakage controls
-- Least-privilege tool exposure
+- Direct and indirect prompt-security controls
+- Permission-scoped tool exposure
 - Structured tool-call validation
+- Rate limiting
+- Structured security audit logging
 
-The system is deliberately developed through **vulnerable and hardened iterations**.
+The application is deliberately developed through **vulnerable and hardened iterations**.
 
 ```text
 Build
@@ -32,7 +33,7 @@ Retest
 Document residual risk
 ```
 
-> **Important:** All users, customers, documents, accounts, conversations, and transfers used in this project are fictional. No real financial transaction is performed.
+> **Important:** All users, customers, documents, accounts, conversations, and transfers in this project are fictional. No real financial transaction is performed.
 
 ---
 
@@ -42,31 +43,32 @@ A central design principle of this project is:
 
 > **The LLM is not a security boundary.**
 
-The model is treated as an untrusted decision-making component that may:
+The model is treated as a potentially manipulable component that may:
 
-- Be manipulated through direct prompts
-- Be manipulated through retrieved documents
-- Request unauthorized resources
-- Select inappropriate tools
+- Follow malicious user instructions
+- Follow malicious retrieved instructions
+- Request inappropriate tools
 - Generate malformed tool arguments
-- Attempt high-impact operations
+- Attempt unauthorized actions
+- Attempt high-impact actions autonomously
 - Expose internal information
-- Carry data across conversation state
+- Carry information across conversation state
+- Consume excessive application resources
 
-Security-sensitive decisions are therefore enforced by deterministic application controls wherever possible.
+Security-critical properties are therefore enforced through deterministic application controls wherever possible.
 
 ```text
-LLM request / decision
-        │
-        ▼
-Application controls
-        │
-   ┌────┴────┐
-   │         │
- ALLOW      DENY
+LLM request
+    │
+    ▼
+Application Security Controls
+    │
+ ┌──┴────┐
+ │       │
+ALLOW   DENY
 ```
 
-The project also distinguishes several different security properties:
+The project distinguishes between:
 
 ```text
 Authentication
@@ -78,523 +80,142 @@ Tool availability
 Input validation
      ≠
 Human approval
+     ≠
+Rate limiting
+     ≠
+Auditability
 ```
 
-Each requires its own control.
+Each addresses a different security property.
 
 ---
 
 # Current Release
 
-## `v0.8-tool-access-validation-controls`
+## `v0.9-audit-rate-limit-controls`
 
-The current release adds:
+The current hardened release adds:
 
-- Permission-scoped tool exposure
-- Least-privilege agent capabilities
-- Structured customer-ID validation
-- Structured transfer-account validation
-- Transfer amount bounds
-- RAG query-length constraints
-- Tests verifying generated agent tool schemas
-- Tests verifying disabled tools are not exposed to the agent
-- Regression tests verifying invalid transfer inputs create no side effects
+- Structured JSONL security audit logging
+- Unique event identifiers
+- UTC event timestamps
+- User-attributed security decisions
+- Rate-limit audit events
+- Prompt-security audit events
+- HITL approval audit events
+- Output-security audit events
+- Customer authorization audit events
+- RAG retrieval/content-security audit events
+- Transfer authorization and execution audit events
+- Per-user agent request rate limiting
+- Transfer-specific rate limiting
+- Tests verifying rate-limit isolation and expiry
+- Tests verifying rate-limited actions create no protected side effect
+- Tests verifying sensitive raw RAG queries are not written to audit events
 
-Previously implemented controls remain active:
-
-- Customer object-level authorization
-- RAG retrieval authorization
-- Indirect prompt-injection defenses
-- Session isolation
-- Transfer authorization
-- Human-in-the-loop approval
-- Direct prompt-security filtering
-- Controlled output-leakage detection
+Previously implemented controls remain active.
 
 ---
 
 # Current Architecture
 
 ```text
-                              User
-                               │
-                               ▼
-                        Prompt Security
-                               │
-                               ▼
-                         AI Agent / LLM
-                               │
-                         Tool Selection
-                               │
-                               ▼
-                    Permission-Based Tool Set
-                               │
-             ┌─────────────────┼──────────────────┐
-             │                 │                  │
-             ▼                 ▼                  ▼
-      get_customer()    search_documents()  create_transfer()
-             │                 │                  │
-             │                 │                  ▼
-             │                 │             HITL Approval
-             │                 │                  │
-             ▼                 ▼                  ▼
-       Object AuthZ      Retrieval AuthZ     Action AuthZ
-                               │                  │
-                               ▼                  ▼
-                           RAG Scan         Object AuthZ
-                               │                  │
-                               ▼                  ▼
-                          LLM Context        Business Logic
-                                                    │
-                                                    ▼
-                                             Simulated Side
-                                                 Effect
-```
+                                  User
+                                   │
+                                   ▼
+                            Agent Rate Limit
+                                   │
+                           ┌───────┴───────┐
+                           │               │
+                         DENY            ALLOW
+                           │               │
+                           ▼               ▼
+                       Audit Event   Prompt Security
+                                           │
+                                           ▼
+                                      AI Agent / LLM
+                                           │
+                                    Permission-Scoped
+                                        Tool Set
+                                           │
+                      ┌────────────────────┼─────────────────────┐
+                      │                    │                     │
+                      ▼                    ▼                     ▼
+               get_customer()      search_documents()     create_transfer()
+                      │                    │                     │
+                      ▼                    ▼                     ▼
+                Object AuthZ         Retrieval ACL          HITL Approval
+                      │                    │                     │
+                      ▼                    ▼                     ▼
+                 Audit Event        Content Scanner       Action AuthZ
+                                           │                     │
+                                           ▼                     ▼
+                                      Audit Events        Transfer Rate Limit
+                                                                 │
+                                                                 ▼
+                                                           Object AuthZ
+                                                                 │
+                                                                 ▼
+                                                            Execution
+                                                                 │
+                                                                 ▼
+                                                            Audit Event
 
-Tool calls also cross a structured validation boundary:
-
-```text
-LLM-generated arguments
-          │
-          ▼
-    Tool JSON Schema
-          │
-      ┌───┴────┐
-      │        │
-    Valid    Invalid
-      │        │
-      ▼        ▼
- Continue    Reject
+                                      Agent Output
+                                           │
+                                           ▼
+                                      Output Scan
+                                           │
+                                           ▼
+                                      Audit Event
 ```
 
 ---
 
 # Security Boundaries
 
-The application currently models independent boundaries around:
+The application currently models independent security boundaries around:
 
 1. Customer object authorization
 2. RAG retrieval authorization
 3. Retrieved-content trust
 4. Persistent session isolation
-5. High-impact action permission
-6. Source-customer authorization
-7. Human approval
-8. Direct prompt policy
-9. Agent-output inspection
-10. Agent tool availability
-11. Tool argument validation
+5. Tool availability
+6. High-impact action authorization
+7. Source-customer authorization
+8. Human approval
+9. Direct prompt policy
+10. Tool argument validation
+11. Agent-output inspection
+12. Agent request rate limiting
+13. High-impact transfer rate limiting
+14. Security event auditing
 
-A security control at one layer is not assumed to protect another.
+A control implemented at one boundary is not assumed to replace another.
 
 ---
 
-# Mock Users
+# Current Security Findings
 
-Two fictional relationship managers are used:
-
-| User | Role | Authorized Customer |
+| ID | Finding | Status |
 |---|---|---|
-| Alice | Advisor | `CUST001` |
-| Bob | Advisor | `CUST002` |
-
-User context contains:
-
-```text
-username
-user_id
-role
-authorized_customer_ids
-permissions
-```
-
-Permissions are used independently from customer ownership.
+| SEC-001 | Cross-customer authorization bypass | ✅ Mitigated |
+| SEC-002 | Cross-user RAG authorization bypass | ✅ Mitigated |
+| SEC-003 | Indirect prompt injection through RAG | 🛡️ Controls implemented |
+| SEC-004 | Cross-user session memory leakage | ✅ Mitigated |
+| SEC-007 | High-impact transfer without approval | ✅ Mitigated |
+| SEC-008 | Unauthorized transfer | ✅ Mitigated |
+| SEC-009 | Direct prompt-security enforcement gap | 🛡️ Mitigated for configured patterns |
+| SEC-010 | Excessive tool exposure | ✅ Mitigated |
+| SEC-011 | Malformed tool arguments | ✅ Mitigated at tool boundary |
+| SEC-012 | Resource abuse / excessive request frequency | ✅ Mitigated with local rate limits |
+| SEC-013 | Insufficient security-event auditability | ✅ Structured audit trail implemented |
 
 ---
 
-# Least-Privilege Tool Access
+# Customer Authorization
 
-## SEC-010 — Excessive Tool Exposure
-
-### Status: ✅ Mitigated
-
-Giving every user every tool increases the agent's available attack surface.
-
-The project now controls tool availability using explicit permissions.
-
-Three permission checks currently exist:
-
-```text
-customer:read
-document:read
-transfer:create
-```
-
-Conceptually:
-
-```text
-Authenticated User
-       │
-       ▼
-Application Permissions
-       │
-       ├── customer:read
-       ├── document:read
-       └── transfer:create
-       │
-       ▼
-Agent Tool Set
-```
-
-A user without a required permission should not have that capability exposed to the model.
-
----
-
-# Tool Access Controls
-
-## Customer Access
-
-```text
-customer:read
-      │
-      ▼
-get_customer enabled
-```
-
-Without the permission:
-
-```text
-get_customer
-     ↓
-not exposed
-```
-
-## Document Access
-
-```text
-document:read
-      │
-      ▼
-search_documents enabled
-```
-
-## Transfer Access
-
-```text
-transfer:create
-      │
-      ▼
-create_transfer enabled
-```
-
-This reduces the number of capabilities available to the LLM according to the authenticated caller.
-
----
-
-# Why Tool Availability and Authorization Are Different
-
-Tool hiding alone is not sufficient security.
-
-For example:
-
-```text
-transfer:create
-      │
-      ▼
-create_transfer exposed
-```
-
-does not mean:
-
-```text
-Alice may transfer from every customer
-```
-
-The transfer flow still requires:
-
-```text
-Tool Permission
-      ↓
-Human Approval
-      ↓
-Source-Customer Authorization
-      ↓
-Execution
-```
-
-This is defense in depth.
-
-The high-impact transfer business logic also independently checks the `transfer:create` permission before creating a side effect.
-
----
-
-# Least-Privilege Example
-
-Consider a user with only:
-
-```text
-document:read
-```
-
-The expected agent capability set is:
-
-```text
-search_documents       ✅
-
-get_customer           ❌
-create_transfer        ❌
-```
-
-The security test suite verifies this behavior at the actual agent tool-set level, not only by calling the helper permission functions.
-
----
-
-# Structured Tool Calls
-
-## SEC-011 — Malformed Tool Arguments
-
-### Status: ✅ Mitigated at the agent-facing tool boundary
-
-LLMs generate tool arguments dynamically.
-
-Without structured validation, values such as:
-
-```text
-customer_id = "John Smith"
-
-amount_chf = -5000
-
-destination_account = "anything"
-
-query = ""
-```
-
-could reach application logic.
-
-Agent-facing tools now use constrained argument types.
-
----
-
-# Customer ID Schema
-
-Customer IDs must match:
-
-```text
-CUST + exactly 3 digits
-```
-
-Examples:
-
-```text
-CUST001     ✅
-CUST123     ✅
-CUST999     ✅
-
-cust001     ❌
-CUST01      ❌
-CUST0001    ❌
-CUSTABC     ❌
-```
-
-Conceptual pattern:
-
-```text
-^CUST\d{3}$
-```
-
----
-
-# Destination Account Schema
-
-Transfers in this project intentionally use simulated accounts only.
-
-Valid format:
-
-```text
-DEMO-ACCOUNT-<3 to 6 digits>
-```
-
-Examples:
-
-```text
-DEMO-ACCOUNT-001        ✅
-DEMO-ACCOUNT-999        ✅
-DEMO-ACCOUNT-123456     ✅
-
-DEMO-ACCOUNT-12         ❌
-DEMO-ACCOUNT-ABC        ❌
-CH9300000000000000000   ❌
-```
-
-This explicitly prevents the lab from treating real-looking banking identifiers as valid simulated transfer destinations.
-
----
-
-# Transfer Amount Schema
-
-Agent-facing transfer amounts must be whole CHF values between:
-
-```text
-CHF 1
-```
-
-and:
-
-```text
-CHF 100,000
-```
-
-Examples:
-
-```text
-1          ✅
-1000       ✅
-50000      ✅
-100000     ✅
-
-0          ❌
--1         ❌
-100001     ❌
-```
-
----
-
-# Document Search Schema
-
-RAG queries must contain:
-
-```text
-minimum length = 2
-maximum length = 500
-```
-
-This rejects trivial or unexpectedly large values at the tool boundary.
-
-Examples:
-
-```text
-"Q3"                                  ✅
-"CUST001 investment preferences"      ✅
-
-""                                    ❌
-"A"                                   ❌
-501-character query                   ❌
-```
-
----
-
-# Validation Boundary
-
-The schemas protect the path:
-
-```text
-LLM
- ↓
-Agent Tool
- ↓
-Schema Validation
- ↓
-Application Logic
-```
-
-This is an important trust boundary.
-
-Python type annotations alone should not be interpreted as universal runtime validation for every internal function call.
-
-For example:
-
-```text
-create_transfer()
-```
-
-uses the structured agent-facing schema, while:
-
-```text
-create_transfer_logic()
-```
-
-is internal business logic.
-
-Direct application calls to inner functions must therefore either originate from trusted validated paths or perform their own critical checks.
-
----
-
-# Transfer Defense in Depth
-
-The transfer implementation currently includes additional deterministic checks inside the business logic.
-
-```text
-Transfer Request
-      │
-      ▼
-transfer:create?
-      │
-      ▼
-Authorized customer?
-      │
-      ▼
-Amount > 0?
-      │
-      ▼
-Valid DEMO-ACCOUNT format?
-      │
-      ▼
-Create simulated transfer
-```
-
-Therefore invalid destination values are rejected even if the internal function is called directly.
-
-A denied validation request produces:
-
-```text
-No transfer record
-```
-
-rather than merely returning an error after creating the side effect.
-
----
-
-# Important Validation Design Note
-
-The agent-facing transfer schema imposes:
-
-```text
-1 <= amount_chf <= 100000
-```
-
-The internal transfer function independently rejects:
-
-```text
-amount_chf <= 0
-```
-
-The upper CHF 100,000 limit is currently enforced at the **tool/schema boundary** rather than duplicated inside the business-logic function.
-
-This distinction is intentional to make trust boundaries visible in the lab.
-
-A future hardening iteration could choose to duplicate high-value invariants inside domain logic if those functions may be invoked from other application paths.
-
----
-
-# SEC-001 — Customer Authorization
-
-## Status: ✅ Mitigated
-
-### Before
-
-```text
-Alice
-  ↓
-CUST002
-  ↓
-Customer returned ❌
-```
-
-### Control
-
-Object-level authorization.
-
-### After
+Customer data access is protected by object-level authorization.
 
 ```text
 Alice → CUST001 → ALLOW
@@ -604,172 +225,64 @@ Bob   → CUST001 → DENY
 Bob   → CUST002 → ALLOW
 ```
 
----
+Both successful and denied customer authorization decisions are represented as structured security events.
 
-# SEC-002 — Cross-User RAG Retrieval
-
-## Status: ✅ Mitigated
-
-### Before
+Example event type:
 
 ```text
-Alice
-  ↓
-Semantic Search
-  ↓
-Bob-owned document
-  ↓
-LLM Context ❌
+AUTHZ_CUSTOMER
 ```
 
-### Control
-
-Authorization is applied before semantic retrieval.
+Possible outcomes:
 
 ```text
-Alice
-  ↓
-public + alice documents only
-  ↓
-Chroma
-```
-
----
-
-# SEC-003 — Indirect Prompt Injection
-
-## Status: 🛡️ Controls Implemented
-
-Authorized documents may still contain malicious instructions.
-
-Controls include:
-
-```text
-Retrieved Document
-       │
-       ▼
-Content Scanner
-       │
-   ┌───┴────┐
-   │        │
- BLOCK    PASS
-            │
-            ▼
-       Mark UNTRUSTED
-            │
-            ▼
-           LLM
-```
-
-Safe retrieved content is not promoted to trusted instructions.
-
-Residual risk remains for novel or semantically obfuscated attacks.
-
----
-
-# SEC-004 — Session Memory Leakage
-
-## Status: ✅ Mitigated
-
-### Before
-
-```text
-Alice ──┐
-        ▼
-      default
-        ▲
-Bob ────┘
-
-❌
-```
-
-### After
-
-```text
-Alice → user:alice:default
-
-Bob   → user:bob:default
-```
-
-Regression tests verify cross-user conversation isolation.
-
----
-
-# SEC-007 — High-Impact Action Without Approval
-
-## Status: ✅ Mitigated
-
-### Before
-
-```text
-Agent
-  ↓
-create_transfer()
-  ↓
-SIMULATED_EXECUTED ❌
-```
-
-### After
-
-```text
-Agent
-  ↓
-Human Approval
-  │
-  ├── Reject → STOP
-  │
-  └── Approve
-         ↓
-      Authorization
-         ↓
-      Execution
-```
-
----
-
-# SEC-008 — Transfer Authorization
-
-## Status: ✅ Mitigated
-
-### Before
-
-```text
-Alice
-  ↓
-Transfer from CUST002
-  ↓
-EXECUTED ❌
-```
-
-### After
-
-```text
-Alice
-  ↓
-transfer:create
-  ↓
-CUST002 authorization
-  ↓
+ALLOW
 DENY
-  ↓
-No side effect ✅
 ```
 
 ---
 
-# SEC-009 — Direct Prompt Security
+# RAG Security
 
-## Status: 🛡️ Mitigated for configured rules
+The RAG pipeline combines retrieval authorization and content security.
 
-The application detects several direct prompt attack patterns, including:
+```text
+Query
+  ↓
+Retrieval ACL
+  ↓
+Authorized Documents
+  ↓
+Content Scanner
+  ↓
+Explicit UNTRUSTED Boundary
+  ↓
+LLM
+```
 
-- Instruction override
-- Role override
-- Security bypass
-- System-prompt extraction
-- Human-approval bypass
+Audit events include:
 
-High-confidence rules are blocked before the prompt reaches the model.
+```text
+RAG_SEARCH
+RAG_RETRIEVAL
+RAG_CONTENT_SCAN
+```
+
+The search event records metadata such as:
+
+```text
+query_length
+```
+
+rather than storing the raw user query.
+
+This intentionally reduces sensitive-content exposure in security logs.
+
+---
+
+# Prompt Security
+
+Direct user prompts are scanned before being sent to the model.
 
 ```text
 User Prompt
@@ -778,61 +291,627 @@ User Prompt
 Prompt Scanner
      │
      ▼
-Policy
+Policy Decision
   ┌──┴─────┐
   │        │
 BLOCK    ALLOW
-  │        │
- STOP      ▼
-          LLM
 ```
 
-A controlled internal canary is also scanned in model output.
+Configured high-confidence rules include attacks such as:
 
-Prompt injection is not considered completely solved.
+- Instruction override
+- Role override
+- Security bypass
+- System-prompt extraction
+- Human-approval bypass
+
+Detected and blocked prompts generate structured audit events.
+
+Example:
+
+```text
+PROMPT_SECURITY
+```
+
+with outcomes such as:
+
+```text
+DETECTED
+BLOCK
+```
+
+The application stores characteristics such as rule name and prompt length rather than the full malicious prompt.
 
 ---
 
-# Security Tests
+# Tool Access / Least Privilege
 
-The deterministic pytest suite currently covers:
+Tool availability is permission-scoped.
 
 ```text
-Customer object authorization                ✅
-RAG authorization                            ✅
-RAG content security                         ✅
-Session isolation                            ✅
-Transfer authorization                       ✅
-Human approval controls                      ✅
-Direct prompt enforcement                    ✅
-Controlled output leakage                    ✅
-Tool permission callbacks                    ✅
-Least-privilege tool exposure                ✅
-Customer-ID schema                           ✅
-Destination-account schema                   ✅
-Transfer amount schema                       ✅
-RAG query schema                             ✅
-Generated agent tool schemas                 ✅
-Invalid transfer side effects                ✅
+customer:read
+    ↓
+get_customer
+
+
+document:read
+    ↓
+search_documents
+
+
+transfer:create
+    ↓
+create_transfer
 ```
 
-Run all tests:
+The goal is to reduce the capabilities exposed to the model according to the authenticated caller.
+
+Tool availability does not replace object-level authorization.
+
+---
+
+# Structured Tool Validation
+
+Agent-facing arguments use constrained schemas.
+
+## Customer IDs
+
+```text
+^CUST\d{3}$
+```
+
+Valid:
+
+```text
+CUST001
+CUST999
+```
+
+Invalid:
+
+```text
+cust001
+CUST01
+CUST0001
+CUSTABC
+```
+
+---
+
+## Destination Accounts
+
+Only simulated account identifiers are accepted.
+
+```text
+DEMO-ACCOUNT-<3 to 6 digits>
+```
+
+Examples:
+
+```text
+DEMO-ACCOUNT-999       ✅
+DEMO-ACCOUNT-123456    ✅
+
+CH9300000000000000000  ❌
+DEMO-ACCOUNT-ABC       ❌
+```
+
+---
+
+## Transfer Amounts
+
+Agent-facing transfers are constrained to:
+
+```text
+CHF 1 – CHF 100,000
+```
+
+---
+
+## RAG Queries
+
+Document-search queries are constrained to:
+
+```text
+minimum: 2 characters
+maximum: 500 characters
+```
+
+---
+
+# High-Impact Transfer Security
+
+The simulated transfer tool combines multiple controls.
+
+```text
+Agent requests transfer
+        │
+        ▼
+Tool Permission
+        │
+        ▼
+Human Approval
+        │
+        ▼
+Source-Customer Authorization
+        │
+        ▼
+Input Validation
+        │
+        ▼
+Transfer Rate Limit
+        │
+        ▼
+Simulated Execution
+```
+
+This ensures that:
+
+```text
+Human approval
+```
+
+does not replace:
+
+```text
+Authorization
+```
+
+and authorization does not replace:
+
+```text
+Validation
+```
+
+or:
+
+```text
+Abuse protection
+```
+
+---
+
+# SEC-012 — Resource Abuse / Rate Limiting
+
+## Status: ✅ Mitigated for the local lab
+
+LLM and agentic applications may be abused by repeatedly triggering:
+
+- Model requests
+- RAG retrieval
+- Tool execution
+- High-impact operations
+
+The project therefore implements two independent sliding-window rate limits.
+
+---
+
+## Agent Request Rate Limit
+
+Current configuration:
+
+```text
+10 requests
+per
+60 seconds
+per user
+```
+
+The limiter is keyed by username.
+
+Therefore:
+
+```text
+Alice exhausting Alice's quota
+```
+
+must not cause:
+
+```text
+Bob's quota to be exhausted
+```
+
+---
+
+## Transfer Rate Limit
+
+The simulated high-impact transfer capability has a stricter limit:
+
+```text
+3 transfer requests
+per
+300 seconds
+per user
+```
+
+This provides a separate control around repeated high-impact operations.
+
+---
+
+# Rate-Limit Flow
+
+```text
+Request
+   │
+   ▼
+Sliding Window
+   │
+ ┌─┴─────────┐
+ │           │
+ALLOW       DENY
+ │           │
+ ▼           ▼
+Continue   Audit
+             │
+             ▼
+           Reject
+```
+
+Rate-limited agent requests do not reach model execution.
+
+Rate-limited transfer requests do not create an additional transfer record.
+
+---
+
+# Rate-Limit Audit Events
+
+Agent-level rate limiting produces:
+
+```text
+RATE_LIMIT
+```
+
+with:
+
+```text
+ALLOW
+DENY
+```
+
+and useful metadata including:
+
+```text
+remaining
+retry_after_seconds
+```
+
+Transfer rate limiting generates:
+
+```text
+TRANSFER_RATE_LIMIT
+```
+
+when the high-impact operation is denied.
+
+---
+
+# Rate-Limiter Limitations
+
+The current limiter is intentionally appropriate for a local security lab.
+
+It is:
+
+```text
+in-memory
+per-process
+```
+
+Therefore state is reset if the application restarts.
+
+It is not designed as a distributed production-grade rate-limiting system.
+
+A production deployment would typically require a shared backend or gateway-level enforcement.
+
+---
+
+# SEC-013 — Security Auditability
+
+## Status: ✅ Structured audit trail implemented
+
+Security controls should not only make decisions.
+
+Those decisions must also be observable.
+
+The project therefore introduces structured security audit events.
+
+---
+
+# Audit Event Format
+
+Audit records are stored as JSON Lines:
+
+```text
+security-audit.jsonl
+```
+
+Each event contains:
+
+```json
+{
+  "event_id": "...",
+  "timestamp": "...",
+  "event_type": "...",
+  "username": "...",
+  "outcome": "...",
+  "details": {}
+}
+```
+
+Each event receives:
+
+- Unique event ID
+- UTC timestamp
+- Event type
+- Authenticated username
+- Security outcome
+- Structured event-specific details
+
+---
+
+# Current Audit Event Types
+
+The system currently emits security events including:
+
+```text
+RATE_LIMIT
+PROMPT_SECURITY
+HUMAN_APPROVAL
+OUTPUT_SECURITY
+
+AUTHZ_CUSTOMER
+
+RAG_SEARCH
+RAG_RETRIEVAL
+RAG_CONTENT_SCAN
+
+TOOL_ACCESS
+
+AUTHZ_TRANSFER
+TRANSFER_RATE_LIMIT
+TRANSFER_EXECUTION
+```
+
+---
+
+# Example Authorization Event
+
+```json
+{
+  "event_type": "AUTHZ_CUSTOMER",
+  "username": "alice",
+  "outcome": "DENY",
+  "details": {
+    "customer_id": "CUST002",
+    "reason": "customer_not_authorized"
+  }
+}
+```
+
+---
+
+# Example Prompt-Security Event
+
+```json
+{
+  "event_type": "PROMPT_SECURITY",
+  "username": "alice",
+  "outcome": "BLOCK",
+  "details": {
+    "rule": "instruction_override"
+  }
+}
+```
+
+---
+
+# Example Transfer Event
+
+```json
+{
+  "event_type": "TRANSFER_EXECUTION",
+  "username": "alice",
+  "outcome": "SUCCESS",
+  "details": {
+    "source_customer_id": "CUST001",
+    "amount_chf": 1000
+  }
+}
+```
+
+The simulated destination account is intentionally not required in the successful transfer audit event.
+
+This demonstrates basic audit-data minimization.
+
+---
+
+# Audit Data Minimization
+
+Audit logs themselves can become a sensitive-data source.
+
+The logger documentation therefore explicitly warns against recording:
+
+```text
+Secrets
+Full prompts
+Customer records
+Other sensitive content
+```
+
+Examples of deliberate minimization include:
+
+```text
+RAG query
+    ↓
+store query_length
+rather than raw query
+```
+
+and:
+
+```text
+Prompt
+    ↓
+store rule + length
+rather than full prompt
+```
+
+---
+
+# Audit Trail Limitations
+
+The current audit trail is designed for the local lab.
+
+It is stored in a local JSONL file.
+
+This provides:
+
+```text
+Structured
+Searchable
+Append-oriented
+Human-readable
+Machine-readable
+```
+
+security evidence.
+
+It does **not** provide production-grade properties such as:
+
+- Cryptographic log integrity
+- Tamper-evident storage
+- Centralized collection
+- SIEM integration
+- Retention policies
+- Log rotation
+- Remote immutable storage
+- Alert correlation
+
+These remain production considerations rather than claims of the current implementation.
+
+---
+
+# Human-in-the-Loop Auditing
+
+High-impact transfer requests require operator approval.
+
+Approval outcomes are now explicitly recorded.
+
+```text
+HUMAN_APPROVAL
+```
+
+Possible outcomes:
+
+```text
+APPROVED
+REJECTED
+```
+
+Conceptually:
+
+```text
+Agent requests transfer
+        │
+        ▼
+Human Approval
+   ┌────┴─────┐
+   │          │
+APPROVE     REJECT
+   │          │
+   └────┬─────┘
+        ▼
+    Audit Event
+```
+
+---
+
+# Output-Security Auditing
+
+The project contains a controlled internal marker used to test output leakage.
+
+If output security blocks a response:
+
+```text
+OUTPUT_SECURITY
+```
+
+is recorded with:
+
+```text
+outcome = BLOCK
+```
+
+and the matching security rule.
+
+---
+
+# Security Testing Strategy
+
+The project deliberately separates deterministic application-security tests from probabilistic model-behavior tests.
+
+## Deterministic Tests
+
+pytest currently covers:
+
+```text
+Customer authorization                    ✅
+RAG authorization                         ✅
+RAG content security                      ✅
+Session isolation                         ✅
+Transfer authorization                    ✅
+Human approval                            ✅
+Prompt-security enforcement               ✅
+Output canary enforcement                 ✅
+Tool permissions                          ✅
+Least-privilege tool exposure             ✅
+Structured tool schemas                   ✅
+Transfer validation                       ✅
+Agent rate limiting                       ✅
+Transfer rate limiting                    ✅
+Per-user rate-limit isolation             ✅
+Rate-limit window expiry                  ✅
+Rate-limited side-effect prevention       ✅
+Audit JSONL structure                     ✅
+Audit event append behavior               ✅
+Authorization audit events                ✅
+RAG audit events                          ✅
+Transfer audit events                     ✅
+Audit data minimization                   ✅
+```
+
+Run:
 
 ```powershell
 python -m pytest -v
 ```
 
-Run tool-access tests:
+---
 
-```powershell
-python -m pytest tests/security/test_tool_access.py -v
+# Deterministic vs Probabilistic Testing
+
+```text
+Application Security Property
+           │
+           ▼
+         pytest
+
+
+Model / LLM Behavior
+           │
+           ▼
+   Promptfoo / Red Teaming
 ```
 
-Run schema tests:
+Future probabilistic tests will target:
 
-```powershell
-python -m pytest tests/security/test_tool_schemas.py -v
-```
+- Jailbreaking
+- Direct prompt-injection variations
+- Indirect prompt injection
+- System-prompt extraction
+- Tool manipulation
+- Approval manipulation
+- Sensitive-data extraction
+- Semantic and obfuscated attacks
 
 ---
 
@@ -840,21 +919,23 @@ python -m pytest tests/security/test_tool_schemas.py -v
 
 | ID | Threat | Control | Evidence |
 |---|---|---|---|
-| SEC-001 | Cross-customer lookup | Object authorization | pytest ✅ |
+| SEC-001 | Cross-customer access | Object authorization | pytest ✅ |
 | SEC-002 | Cross-user RAG retrieval | Retrieval ACL | pytest ✅ |
-| SEC-003 | Indirect RAG prompt injection | Scan + trust boundary | pytest ✅ |
-| SEC-004 | Cross-session leakage | User-bound sessions | pytest ✅ |
+| SEC-003 | Indirect prompt injection | Content scan + trust boundary | pytest ✅ |
+| SEC-004 | Cross-user session leakage | User-bound sessions | pytest ✅ |
 | SEC-007 | Autonomous high-impact transfer | HITL | pytest + CLI ✅ |
 | SEC-008 | Unauthorized transfer | Action + object AuthZ | pytest ✅ |
-| SEC-009 | Direct prompt injection | Input policy + output scan | pytest ✅ |
-| SEC-010 | Excessive tool exposure | Permission-scoped tool set | pytest ✅ |
+| SEC-009 | Direct prompt injection | Prompt policy + output scan | pytest ✅ |
+| SEC-010 | Excessive tool exposure | Permission-scoped tools | pytest ✅ |
 | SEC-011 | Malformed tool arguments | Structured schemas | pytest ✅ |
+| SEC-012 | Request / transfer resource abuse | Sliding-window rate limits | pytest ✅ |
+| SEC-013 | Insufficient security observability | Structured audit trail | pytest ✅ |
 
 ---
 
 # Git Security Evolution
 
-Tags represent significant hardened security checkpoints.
+Version tags represent hardened security checkpoints.
 
 ```text
 v0.1-vulnerable-baseline
@@ -879,6 +960,9 @@ v0.7-prompt-security-controls
         │
         ▼
 v0.8-tool-access-validation-controls
+        │
+        ▼
+v0.9-audit-rate-limit-controls
 ```
 
 ---
@@ -887,213 +971,139 @@ v0.8-tool-access-validation-controls
 
 ## Customer Authorization
 
-- [x] Create vulnerable customer lookup
 - [x] Reproduce cross-customer access
-- [x] Add deterministic tests
-- [x] Enforce authorization
+- [x] Add tests
+- [x] Enforce object authorization
 - [x] Retest
-
----
-
-## Multi-Tool Agent
-
-- [x] Add multiple independent tools
-- [x] Demonstrate multi-tool behavior
-
----
 
 ## RAG Authorization
 
-- [x] Add Chroma RAG
-- [x] Add document ownership
-- [x] Reproduce unauthorized retrieval
+- [x] Reproduce cross-user retrieval
+- [x] Add retrieval ACL
 - [x] Add tests
-- [x] Enforce retrieval ACL
 - [x] Retest
-
----
 
 ## Indirect Prompt Injection
 
-- [x] Add malicious retrieved content
-- [x] Reproduce risk
+- [x] Introduce malicious retrieved content
 - [x] Add content scanner
-- [x] Add explicit untrusted boundary
-- [x] Add behavioral rules
+- [x] Add untrusted-content boundary
 - [x] Add regression tests
 - [x] Document residual risk
 
----
+## Session Isolation
 
-## Session and Memory Isolation
-
-- [x] Add persistent memory
 - [x] Introduce shared-session vulnerability
 - [x] Reproduce cross-user leakage
-- [x] Implement per-user sessions
+- [x] Bind sessions to authenticated users
 - [x] Add regression tests
-
----
 
 ## Tool Abuse / Excessive Agency
 
-- [x] Add simulated transfer tool
-- [x] Demonstrate excessive agency
-- [x] Reproduce transfer authorization failure
+- [x] Add simulated high-impact transfer
+- [x] Demonstrate execution without approval
+- [x] Demonstrate unauthorized transfer
 - [x] Add action authorization
 - [x] Add object authorization
-- [x] Add HITL approval
+- [x] Add HITL
 - [x] Test approve/reject paths
-- [x] Prevent unauthorized side effects
 
----
-
-## Direct Prompt Injection / System-Prompt Extraction
+## Direct Prompt Security
 
 - [x] Add controlled security canary
-- [x] Create vulnerable detection-only baseline
-- [x] Add direct prompt scanner
-- [x] Add enforcement policy
-- [x] Block configured high-confidence attacks
-- [x] Add controlled output scanner
+- [x] Create detection-only vulnerable baseline
+- [x] Add blocking policy
+- [x] Enforce configured rules pre-model
+- [x] Add output canary protection
 - [x] Add regression tests
-- [x] Document residual risk
-
----
 
 ## Tool Access / Least Privilege
 
-- [x] Add `customer:read`
-- [x] Add `document:read`
-- [x] Add `transfer:create`
-- [x] Dynamically enable tools based on caller permissions
-- [x] Verify disabled tools are not exposed to the agent
-- [x] Test least-privilege combinations
-- [x] Preserve business-logic authorization for high-impact transfer actions
+- [x] Add explicit permissions
+- [x] Dynamically expose tools
+- [x] Test least-privilege behavior
+- [x] Preserve internal authorization controls
 
----
+## Structured Tool Validation
 
-## Structured Tool-Call and Input Validation
-
-- [x] Add `CustomerId` schema
-- [x] Add `DestinationAccount` schema
-- [x] Add `TransferAmountCHF` schema
-- [x] Add `DocumentSearchQuery` schema
-- [x] Enforce customer-ID format
-- [x] Enforce simulated-account format
-- [x] Enforce CHF transfer range at tool boundary
-- [x] Enforce RAG query length
-- [x] Test generated agent schemas
-- [x] Test invalid inputs
-- [x] Verify rejected transfers produce no side effect
-- [x] Release `v0.8-tool-access-validation-controls`
-
----
-
-## Output Validation / Sensitive-Data Controls — NEXT
-
-- [ ] Expand beyond the system-prompt canary
-- [ ] Identify fields considered sensitive
-- [ ] Test role-dependent disclosure
-- [ ] Evaluate output redaction
-- [ ] Minimize error-detail leakage
-- [ ] Verify output remains inside caller authorization scope
-- [ ] Add deterministic regression tests
-
----
+- [x] Validate customer IDs
+- [x] Validate simulated accounts
+- [x] Validate transfer amounts
+- [x] Validate RAG queries
+- [x] Test generated schemas
+- [x] Verify invalid transfers create no side effect
 
 ## Rate Limiting / Resource Abuse
 
-- [ ] Add per-user request limits
-- [ ] Demonstrate repeated expensive RAG/LLM requests
-- [ ] Reject abusive traffic
-- [ ] Log rejected activity
-- [ ] Add tests
+- [x] Add per-user agent rate limiter
+- [x] Add transfer-specific rate limiter
+- [x] Test quota exhaustion
+- [x] Test per-user isolation
+- [x] Test sliding-window expiry
+- [x] Prevent rate-limited transfer side effects
+- [x] Audit rate-limit decisions
+
+## Security Logging / Audit Trail
+
+- [x] Add structured JSONL security events
+- [x] Add unique event IDs
+- [x] Add UTC timestamps
+- [x] Record authenticated user
+- [x] Record security outcomes
+- [x] Audit customer authorization
+- [x] Audit RAG operations
+- [x] Audit prompt-security decisions
+- [x] Audit human approval
+- [x] Audit transfer authorization
+- [x] Audit transfer rate limiting
+- [x] Audit successful transfer execution
+- [x] Audit output-security blocking
+- [x] Add audit data-minimization tests
+- [x] Release `v0.9-audit-rate-limit-controls`
 
 ---
 
-## Security Logging and Audit Trail
+# Remaining Work
 
-- [ ] Replace development `print()` logs with structured events
-- [ ] Record authenticated user
-- [ ] Record session
-- [ ] Record tool
-- [ ] Record authorization decision
-- [ ] Record validation failure
-- [ ] Record approval result
-- [ ] Record prompt-security decision
-- [ ] Record RAG source
-- [ ] Avoid unnecessary sensitive-data logging
+## Output Validation / Sensitive-Data Controls
 
----
+- [ ] Expand beyond controlled prompt canary
+- [ ] Identify sensitive output fields
+- [ ] Test role-dependent disclosure
+- [ ] Implement redaction where appropriate
+- [ ] Minimize error-detail disclosure
+- [ ] Test authorization-scoped final outputs
 
 ## Automated Security / Red-Team Testing
 
-### Deterministic pytest
-
-Continue testing:
-
-- Authorization
-- Least privilege
-- RAG security
-- Session isolation
-- HITL
-- Prompt controls
-- Tool schemas
-- Output controls
-- Rate limiting
-
-### Probabilistic testing
-
-Introduce Promptfoo for:
-
-- Direct prompt injection
-- Indirect prompt injection
-- Jailbreaking
-- System-prompt extraction
-- Tool manipulation
-- Approval manipulation
-- Sensitive-data extraction
-- Obfuscated and semantic variants
-
----
+- [ ] Introduce Promptfoo
+- [ ] Add direct prompt-injection attack corpus
+- [ ] Add indirect injection cases
+- [ ] Add jailbreak variants
+- [ ] Add system-prompt extraction tests
+- [ ] Add tool-manipulation tests
+- [ ] Separate deterministic and probabilistic results
 
 ## Threat Model
 
 - [ ] Architecture diagram
-- [ ] Trust boundaries
 - [ ] Assets
 - [ ] Entry points
+- [ ] Trust boundaries
 - [ ] STRIDE analysis
 - [ ] OWASP LLM / GenAI mapping
 - [ ] Threat → control mapping
-- [ ] Residual-risk analysis
+- [ ] Residual-risk assessment
 
----
+## Finding Documentation
 
-## Attack / Finding Documentation
-
-Current findings:
-
-```text
-SEC-001 Customer authorization
-SEC-002 RAG authorization
-SEC-003 Indirect prompt injection
-SEC-004 Session isolation
-SEC-007 Missing HITL
-SEC-008 Transfer authorization
-SEC-009 Direct prompt security
-SEC-010 Tool access / least privilege
-SEC-011 Tool argument validation
-```
-
-Each finding documents:
+Each final finding will document:
 
 ```text
 Security requirement
 Attack
 Expected behavior
-Vulnerable behavior
+Observed vulnerable behavior
 Root cause
 Mitigation
 Regression test
@@ -1101,96 +1111,68 @@ Post-control result
 Residual risk
 ```
 
----
+## Final GitHub Polish
 
-# Security Engineering Methodology
-
-Each control follows the same engineering lifecycle:
-
-```text
-1. Define security property
-        ↓
-2. Build / identify vulnerable state
-        ↓
-3. Reproduce the attack
-        ↓
-4. Add security test
-        ↓
-5. Determine root cause
-        ↓
-6. Implement control
-        ↓
-7. Repeat original attack
-        ↓
-8. Run regression suite
-        ↓
-9. Document residual risk
-```
-
-Git history preserves the evolution from vulnerable implementation to hardened state.
+- [ ] Final concise README
+- [ ] Architecture diagram
+- [ ] Formal threat model
+- [ ] Attack matrix
+- [ ] Control mapping
+- [ ] Security-test results
+- [ ] Sanitized log examples
+- [ ] Setup instructions
+- [ ] `.env.example`
+- [ ] Dependency documentation
+- [ ] Lessons learned
 
 ---
 
-# Next Milestone
-
-The next planned phase is:
-
-## Output Validation / Sensitive-Data Controls
-
-The project currently has one narrow output-security control:
+# Current Security-Control Stack
 
 ```text
-POLICY-CANARY-7F3A92
-```
-
-The next phase expands the question from:
-
-```text
-"Did the model leak its controlled system marker?"
-```
-
-to:
-
-```text
-"Could the final response expose information
-the caller should not receive?"
-```
-
-Potential controls include:
-
-```text
-Tool Result
-    │
-    ▼
+USER
+ │
+ ▼
+Rate Limiting
+ │
+ ▼
+Prompt Security
+ │
+ ▼
+LLM / Agent
+ │
+ ▼
+Least-Privilege Tool Exposure
+ │
+ ▼
+Structured Tool Validation
+ │
+ ▼
 Authorization
-    │
-    ▼
-LLM
-    │
-    ▼
+ │
+ ▼
+Human Approval
+ │
+ ▼
+Business Logic
+ │
+ ▼
 Output Security
-    │
- ┌──┴────┐
- │       │
-SAFE   SENSITIVE
- │       │
- ▼       ▼
-User   REDACT / BLOCK
+ │
+ ▼
+USER
+
+
+Across the pipeline:
+
+        SECURITY AUDIT TRAIL
 ```
-
-This phase will focus on:
-
-- Sensitive fields
-- Role-based disclosure
-- Authorization-scoped output
-- Error-detail minimization
-- Redaction where appropriate
 
 ---
 
 # Final Objective
 
-The completed project will demonstrate agentic-AI security across:
+The completed lab demonstrates practical security engineering across:
 
 ```text
 Agent
@@ -1198,7 +1180,7 @@ Agent
 ├── Least-privilege tool access
 ├── Tool authorization
 ├── Human approval
-└── Structured tool validation
+└── Structured validation
 
 RAG
 ├── Retrieval authorization
@@ -1211,10 +1193,9 @@ Memory
 └── Cross-user leakage
 
 Application
-├── Input validation
-├── Output validation
 ├── Rate limiting
-├── Logging
+├── Output security
+├── Security logging
 └── Auditability
 
 Testing
@@ -1227,8 +1208,8 @@ Threat Modelling
 └── Residual risk
 ```
 
-The objective is not simply to build a functioning AI agent.
+The objective is not simply to show that an AI agent can be attacked.
 
 It is to demonstrate:
 
-> **how authorization, least privilege, validation, approval, trust boundaries, and model-specific defenses combine to reduce the attack surface of an agentic AI application — and how each control can be tested independently.**
+> **where trust boundaries belong, which controls must remain deterministic, how high-impact agent actions can be constrained, how abuse can be limited, and how security-relevant decisions can be independently tested and audited.**

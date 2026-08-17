@@ -7,6 +7,7 @@ from app.context import AppContext
 from app.data_loader import load_customers
 from app.security.tool_access import customer_read_enabled
 from app.security.tool_schemas import CustomerId
+from app.security.audit import audit_event
 
 
 def lookup_customer(
@@ -19,10 +20,12 @@ def lookup_customer(
     """
 
     if customer_id not in context.authorized_customer_ids:
-        print(
-            f"[AUTHZ] DENY "
-            f"user={context.username} "
-            f"customer_id={customer_id}"
+        audit_event(
+            event_type="AUTHZ_CUSTOMER",
+            username=context.username,
+            outcome="DENY",
+            customer_id=customer_id,
+            reason="customer_not_authorized",
         )
         return "Customer not found or access denied."
 
@@ -31,10 +34,11 @@ def lookup_customer(
     if customer_id not in customers:
         return "Customer not found or access denied."
 
-    print(
-        f"[AUTHZ] ALLOW "
-        f"user={context.username} "
-        f"customer_id={customer_id}"
+    audit_event(
+        event_type="AUTHZ_CUSTOMER",
+        username=context.username,
+        outcome="ALLOW",
+        customer_id=customer_id,
     )
 
     return json.dumps(customers[customer_id])
@@ -56,11 +60,6 @@ def get_customer(
     or asks about relationship-manager notes, investment preferences,
     intentions, or other unstructured information.
     """
-    print(
-        f"[TOOL] get_customer called by "
-        f"user={context.context.username} "
-        f"customer_id={customer_id}"
-    )
     return lookup_customer(
         context=context.context,
         customer_id=customer_id
